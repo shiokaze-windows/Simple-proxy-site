@@ -1,3 +1,3 @@
-# Simple-proxy-site
+# 簡易的なプロキシサイト
 未完成
 実行するにはyt-dlpとFFmpegが必要です
