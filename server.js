@@ -1,15 +1,15 @@
 const express = require('express');
 const axios = require('axios');
-const cheerio = require('cheerio'); 
+const cheerio = require('cheerio');
 const cookieParser = require('cookie-parser');
 const session = require('express-session');
 const { exec } = require('child_process'); // yt-dlp用
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto'); 
-const { promisify } = require('util'); 
-const { unlink } = require('fs').promises; 
-const ffmpeg = require('fluent-ffmpeg'); 
+const crypto = require('crypto');
+const { promisify } = require('util');
+const { unlink } = require('fs').promises;
+const ffmpeg = require('fluent-ffmpeg');
 
 const app = express();
 const port = 3000;
@@ -210,7 +210,7 @@ app.get('/logout', (req, res) => {
             console.error("セッション破棄エラー:", err);
             res.status(500).send("ログアウトに失敗しました。");
         } else {
-            res.redirect('/login'); 
+            res.redirect('/login');
         }
     });
 });
@@ -234,7 +234,7 @@ app.get('/', isAuthenticated, (req, res) => {
                 button:hover { background-color: #0056b3; }
                 p { color: #666; font-size: 0.9rem; }
                 .error { color: red; margin-top: 10px; }
-                 .logout-link { display: block; text-align: right; margin-bottom: 20px; } 
+                 .logout-link { display: block; text-align: right; margin-bottom: 20px; }
             </style>
         </head>
         <body>
@@ -268,7 +268,7 @@ app.post('/proxy', isAuthenticated, async (req, res) => {
             // yt-dlpを使って動画をWebM形式で保存
             const videoPath = await downloadVideo(targetUrl);
 
-            // 動画の長さを取得 
+            // 動画の長さを取得
             // const durationInSeconds = await getVideoDuration(videoPath);
             // console.log(`動画の長さ: ${durationInSeconds}秒`);
 
@@ -329,7 +329,7 @@ app.get('/video/:fileName', isAuthenticated, (req, res) => {
         }
 
         const fileSize = stat.size;
-        const range = req.headers.range; 
+        const range = req.headers.range;
 
         if (range) {
             const parts = range.replace(/bytes=/, "").split("-");
@@ -339,11 +339,11 @@ app.get('/video/:fileName', isAuthenticated, (req, res) => {
 
             const fileStream = fs.createReadStream(filePath, { start, end });
 
-            res.writeHead(206, { 
+            res.writeHead(206, {
                 "Content-Range": `bytes ${start}-${end}/${fileSize}`,
                 "Accept-Ranges": "bytes",
                 "Content-Length": chunksize,
-                "Content-Type": "video/webm" /
+                "Content-Type": "video/webm"
             });
 
             fileStream.pipe(res);
@@ -356,9 +356,9 @@ app.get('/video/:fileName', isAuthenticated, (req, res) => {
         } else {
             const head = {
                 "Content-Length": fileSize,
-                "Content-Type": "video/webm", 
+                "Content-Type": "video/webm",
             };
-            res.writeHead(200, head); 
+            res.writeHead(200, head);
             fs.createReadStream(filePath).pipe(res);
         }
     });
@@ -370,7 +370,7 @@ app.listen(port, () => {
     console.log(`Access the login page at http://localhost:${port}/login`);
 });
 
-// アプリケーション終了時のクリーンアップ (オプション) 
+// アプリケーション終了時のクリーンアップ (オプション)
 // process.on('exit', cleanup);
 // process.on('SIGINT', cleanup); // Ctrl+C などで終了した場合
 
