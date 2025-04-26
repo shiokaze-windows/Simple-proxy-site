@@ -87,7 +87,7 @@
   <li><strong>YouTube再生:</strong> YouTube再生機能は <code>yt-dlp</code> および <code>ffmpeg</code> に依存しています。それらが正しくインストールおよび設定されていることを確認してください。<br>YouTubeの規約違反なので個人で利用するとき以外は機能を無効にしてください。</li>
   <li><strong>ビデオ削除:</strong> ダウンロードされたビデオは、一定期間後に自動的に削除がスケジュールされます（ビデオの長さの3倍または最大2時間の短い方、長さが判断できない場合はデフォルトで1時間）。</li>
   <li><strong>セッション:</strong> サーバーは認証にセッションを使用します。セッションは1時間で期限切れになるように設定されています。</li>
-  <li><strong>HTTP vs HTTPS:</strong> セッションCookieは現在 <code>secure: false</code> に設定されており、HTTP経由で機能します。HTTPSを使用する本番環境にデプロイする場合は、これを <code>secure: true</code> に変更してください。</li>
+  <li><strong>HTTP:</strong> セッションCookieは現在 <code>secure: false</code> に設定されており、HTTP経由で機能します。HTTPSを使用する本番環境にデプロイする場合は、これを <code>secure: true</code> に変更してください。</li>
   <li><strong>エラー処理:</strong> 基本的なエラー処理は含まれていますが、本番環境で使用するには、より堅牢なエラー管理とロギングが必要になります。</li>
 </ul>
 
