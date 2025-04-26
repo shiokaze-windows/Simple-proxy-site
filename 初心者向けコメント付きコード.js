@@ -1,176 +1,167 @@
-// ここからNode.jsというプログラム実行環境で使う「部品（モジュール）」を読み込んでいます。
-// これらの部品を使うことで、ウェブサーバーを作ったり、ファイルを扱ったり、他のウェブサイトから情報を取ってきたりできます。
-const express = require('express'); // ウェブサイトを作るための「Express」という便利な部品
-const axios = require('axios'); // 他のウェブサイトに「これちょうだい」とお願い（HTTPリクエスト）するための部品
-const cheerio = require('cheerio'); // ウェブサイトのHTML（見た目を作る設計図）を簡単に操作するための部品（jQueryに似ています）
-const cookieParser = require('cookie-parser'); // ウェブサイトが一時的に情報を保存する「クッキー」を読み取るための部品
-const session = require('express-session'); // ユーザーごとに異なる情報を覚えておく「セッション」を管理するための部品
-const { exec } = require('child_process'); // パソコンの中で別のプログラム（このコードの場合は「yt-dlp」）を動かすための部品
-const fs = require('fs'); // パソコンの中のファイルやフォルダを操作するための部品（ファイルの読み書き、作成など）
-const path = require('path'); // ファイルやフォルダの場所（パス）を扱いやすくするための部品
-const crypto = require('crypto'); // 暗号化など、安全に情報を扱うための部品（ここではランダムな名前を作るのに使います）
-const { promisify } = require('util'); // コールバック形式の関数（処理が終わったら教えてね、という形式）を、async/awaitで使いやすいPromise形式に変える部品
-const { unlink } = require('fs').promises; // ファイルを削除するためのfs部品の「unlink」関数を、Promiseとして使えるようにしたもの
-const ffmpeg = require('fluent-ffmpeg'); // 動画や音声のファイルを処理するための部品（ここでは動画の長さを調べます）
-const urlModule = require('url'); // ウェブサイトのアドレス（URL）を解析したり、組み立てたりするための部品
-const iconv = require('iconv-lite'); // いろいろな国の文字の表示（エンコーディング）を正しく扱うための部品
-const qs = require('qs'); // ウェブサイトのアドレスの後ろにつく「?key=value&key2=value2」のような情報（クエリ文字列）を扱いやすくするための部品
+// Node.jsのモジュールと外部ライブラリのインポート
+// これらのモジュールは、ウェブサーバーの構築、HTTPリクエスト、ファイルシステム操作、外部プロセスの実行、データ変換など、
+// 本アプリケーションの様々な機能を実現するために必要です。
+const express = require('express'); // 高速でミニマルなWebアプリケーションフレームワーク
+const axios = require('axios'); // PromiseベースのHTTPクライアント。サーバーから外部のURLへリクエストを送信するために使用。
+const cheerio = require('cheerio'); // サーバーサイドでのDOM操作ライブラリ。取得したHTMLコンテンツを解析・操作するために使用。
+const cookieParser = require('cookie-parser'); // リクエストヘッダーからCookieをパースし、req.cookiesとしてアクセス可能にするミドルウェア。
+const session = require('express-session'); // セッション管理ミドルウェア。ユーザーの状態（ログイン情報など）をサーバーサイドで維持するために使用。
+const { exec } = require('child_process'); // 新しいプロセスを生成し、コマンドを実行するためのモジュール。ここではyt-dlpを実行するために使用。
+const fs = require('fs'); // ファイルシステム操作モジュール。ファイルの読み書き、ディレクトリ作成などに使用。
+const path = require('path'); // ファイルパス操作ユーティリティ。パスの結合や正規化に使用。
+const crypto = require('crypto'); // 暗号化関連モジュール。ここではランダムなバイト列生成に使用。
+const { promisify } = require('util'); // Node.jsのコールバックベースの関数をPromiseを返す関数に変換するユーティリティ。
+const { unlink } = require('fs').promises; // fsモジュールのunlink関数（ファイル削除）をPromiseとして取得。async/awaitで使用。
+const ffmpeg = require('fluent-ffmpeg'); // ffmpegのラッパーライブラリ。動画/音声ファイルの操作や情報取得に使用。ここでは動画の長さ取得に使用。
+const urlModule = require('url'); // URLの解析、フォーマット、解決（相対URLを絶対URLに変換）に使用。
+const iconv = require('iconv-lite'); // 様々な文字エンコーディングの変換をサポートするライブラリ。取得したコンテンツの文字化け対策に使用。
+const qs = require('qs'); // クエリ文字列のパースと文字列化を行うライブラリ。フォームデータの処理に使用。
 
-// Expressアプリケーション（これがウェブサーバーの本体になります）を作成します
+// Expressアプリケーションインスタンスの作成
 const app = express();
-const port = 3000; // このサーバーをパソコンの「3000番ポート」で起動します。ウェブブラウザで「http://localhost:3000/」と入力するとアクセスできるようになります。
+const port = 3000; // サーバーがリッスンするポート番号
 
-// 認証（ログイン）のための設定です
-const SECRET_PASSWORD = '56562'; // ログインに必要なパスワードです。★★★重要★★★：このパスワードは誰にも知られないように、もっと複雑なものに変えましょう！そして、コードの中に直接書かずに、安全な場所に保管するのが普通です。
-const SESSION_SECRET = 'ugud6fddtd77785rthytyujh'; // セッション情報を安全に保つための秘密の鍵です。これも推測されにくいランダムな文字列に変えましょう！
+// 認証設定
+// 実際のアプリケーションでは、これらの秘密情報は環境変数など、より安全な方法で管理すべきです。
+const SECRET_PASSWORD = '56562'; // ログイン認証に使用するパスワード。要変更。
+const SESSION_SECRET = 'ugud6fddtd77785rthytyujh'; // セッションIDの署名に使用する秘密鍵。セッションハイジャックを防ぐために重要。要変更。
 
-// ダウンロードしたファイルを保存するフォルダの場所を決めます
-const downloadsDir = path.join(__dirname, 'downloads'); // このserver.jsファイルがある場所（__dirname）の中に、「downloads」という名前のフォルダを作ります
-
-// ダウンロードフォルダが存在するか確認し、なければ作成します
-if (!fs.existsSync(downloadsDir)){ // downloadsDirで指定した場所にフォルダがあるか確認
-    fs.mkdirSync(downloadsDir); // もしフォルダがなければ、新しく作成します (Syncは「同期的に」、つまり終わるまで待つという意味です)
+// ダウンロードディレクトリの準備
+// スクリプト実行ディレクトリ直下に 'downloads' ディレクトリを作成します。
+const downloadsDir = path.join(__dirname, 'downloads');
+if (!fs.existsSync(downloadsDir)){ // ディレクトリが存在するか確認
+    fs.mkdirSync(downloadsDir); // 存在しない場合は同期的に作成
 }
 
-// ウェブサーバーがリクエストを受け取ったときに、最初に行う共通の処理（ミドルウェア）を設定します
-app.use(express.json()); // ウェブサイトからのデータがJSON形式（JavaScriptのオブジェクトのような形式）だったら、JavaScriptのオブジェクトに変換して使えるようにします
-app.use(express.urlencoded({ extended: true })); // ウェブサイトからのデータがフォームの形式だったら、JavaScriptのオブジェクトに変換して使えるようにします (extended: trueは、より複雑なデータも扱えるようにする設定です)
-app.use(cookieParser()); // ウェブサイトからのリクエストに含まれるクッキーを読み取れるようにします
-app.use(session({ // セッション機能を使えるように設定します
-    secret: SESSION_SECRET, // セッション情報を暗号化するための秘密鍵を指定します
-    resave: false, // セッションの内容が変わっていなくても、毎回セッションストアに保存し直すか？（通常はfalseで大丈夫です）
-    saveUninitialized: true, // 新しいセッションで何も情報が保存されていなくても、セッションを作成するか？（通常はtrueで大丈夫です）
-    // セッション用のクッキー（ブラウザに保存される小さな情報）の設定です
-    cookie: { maxAge: 60 * 60 * 1000, secure: false } // maxAgeはクッキーの有効期限で、ここでは1時間（ミリ秒単位）です。secure: falseは、HTTPS（暗号化された安全な通信）でない場合でもクッキーを使う設定です。開発中はfalseで良いですが、本番環境ではtrueにすべきです。
+// ミドルウェアの設定
+// 全てのリクエストに対して共通の前処理を行います。
+app.use(express.json()); // Content-Typeがapplication/jsonのリクエストボディをパース。
+app.use(express.urlencoded({ extended: true })); // Content-Typeがapplication/x-www-form-urlencodedのリクエストボディをパース。extended: trueでネストされたオブジェクトや配列も扱えるようにします。
+app.use(cookieParser()); // リクエストのCookieをパースし、req.cookiesオブジェクトとして利用可能にします。
+app.use(session({ // セッションミドルウェアの設定
+    secret: SESSION_SECRET, // セッションIDの署名に使用する秘密鍵
+    resave: false, // セッションがリクエスト中に変更されなかった場合でも強制的にセッションストアに保存し直すか。通常はfalseで効率が良い。
+    saveUninitialized: true, // 未初期化（新しいが変更されていない）セッションをセッションストアに保存するか。trueにすると、セッションが作成された直後からセッションIDがクライアントに発行されます。
+    cookie: { maxAge: 60 * 60 * 1000, secure: false } // セッションCookieの設定。maxAgeは有効期限（ミリ秒）。secure: falseはHTTPSでない接続でもCookieを送信することを許可します（開発環境向け）。本番環境ではtrueにすべきです。
 }));
 
-// child_process.execという、外部プログラムを実行する関数を、Promise（非同期処理を扱いやすくしたもの）に変えます
-const execPromise = promisify(exec); // これで exec 関数を await と一緒に使えるようになります
+// child_process.exec を Promise 化
+// これにより、コールバック地獄を避け、async/await構文で外部コマンド実行を記述しやすくなります。
+const execPromise = promisify(exec);
 
-// ダウンロードするファイルに、他のファイルと重ならないようにランダムな名前をつける関数です
+// ランダムなファイル名生成関数
+// ダウンロードされるファイル名の一意性を保証し、推測されにくくします。
 function generateRandomFileName() {
-    // crypto.randomBytes(16)で16バイトのランダムなデータを生成し、
-    // .toString('hex')でそれを16進数の文字に変換しています。
-    // これで、例えば "a1b2c3d4e5f678901234567890abcdef" のようなランダムな文字列ができます。
+    // 16バイトのランダムなバイト列を生成し、16進数文字列に変換します。
+    // 1バイトは2桁の16進数で表されるため、16バイトは32桁の文字列になります。
     return crypto.randomBytes(16).toString('hex');
 }
 
 /**
- * 指定された動画ファイルを、指定された時間が経った後に自動的に削除する関数です。
- * @param {string} filePath - 削除したい動画ファイルがどこにあるかを示すパス（場所）
- * @param {number} delayMilliseconds - ファイルを削除するまで何ミリ秒待つか
+ * 指定されたファイルを非同期で遅延削除する関数。
+ * ファイルが存在しない場合のエラーも適切に処理します。
+ * @param {string} filePath - 削除対象ファイルの絶対パス。
+ * @param {number} delayMilliseconds - 削除を実行するまでの遅延時間（ミリ秒）。
  */
 async function deleteVideoAfterDelay(filePath, delayMilliseconds) {
-    // コンソール（サーバーの実行画面）に「いつ削除するか」を表示します
     console.log(`動画ファイル ${filePath} を ${delayMilliseconds / 1000} 秒後に削除するようスケジュールしました。`);
-    // setTimeoutを使って、指定した時間が経ったら中の処理を実行するように設定します
+    // setTimeoutは非同期に指定時間後にコールバックを実行します。
     setTimeout(async () => {
         try {
-            // await unlink(filePath)で、ファイルを非同期（他の処理を止めずに）削除します
+            // await unlink(filePath) でファイルを非同期に削除します。
             await unlink(filePath);
-            // 削除が成功したらメッセージを表示
             console.log(`動画ファイルが削除されました: ${filePath}`);
         } catch (error) {
-            // ファイル削除中に何か問題が起きた場合
-            if (error.code === 'ENOENT') { // もしエラーコードが 'ENOENT'（ファイルが存在しない）だったら
-                console.warn(`削除しようとした動画ファイルは既に存在しませんでした: ${filePath}`); // 「もうなかったよ」と警告を表示
-            } else { // その他のエラー（削除する権限がない、など）の場合
-                console.error(`動画ファイルの削除中にエラーが発生しました: ${filePath}`, error); // エラーの内容を詳しく表示
+            // エラーハンドリング
+            if (error.code === 'ENOENT') { // 'ENOENT'はファイルやディレクトリが存在しないことを示すエラーコード。
+                console.warn(`削除しようとした動画ファイルは既に存在しませんでした: ${filePath}`);
+            } else { // その他のエラー（権限問題など）
+                console.error(`動画ファイルの削除中にエラーが発生しました: ${filePath}`, error);
             }
         }
-    }, delayMilliseconds); // ここで指定した時間（ミリ秒）が経ったら上のasync関数が実行されます
+    }, delayMilliseconds);
 }
 
 /**
- * 動画ファイルの長さを調べる関数です。
- * fluent-ffmpegという部品を使って、動画の情報（メタデータ）を読み取ります。
- * @param {string} filePath - 長さを調べたい動画ファイルがどこにあるかを示すパス
- * @returns {Promise<number>} 動画の長さ（秒単位）を教えてくれるPromise（処理結果を待つためのオブジェクト）
+ * 動画ファイルの長さを取得する関数。
+ * fluent-ffmpegのffprobeを利用して、動画のメタデータから長さを抽出します。
+ * @param {string} filePath - 動画ファイルの絶対パス。
+ * @returns {Promise<number>} 動画の長さ（秒単位）を解決するPromise。メタデータから取得できない場合は0を解決。
  */
 function getVideoDuration(filePath) {
-    // Promiseを返します。処理が成功したらresolve、失敗したらrejectを呼び出します。
     return new Promise((resolve, reject) => {
-        // ffmpeg.ffprobeを使って、動画ファイルのメタデータ（ファイルの種類、長さ、画質などの情報）を取得します
+        // ffmpeg.ffprobeは、動画ファイルのメタデータを解析する非同期処理です。
         ffmpeg.ffprobe(filePath, (err, metadata) => {
             if (err) {
-                // メタデータ取得中にエラーが発生した場合
-                console.error(`動画の長さ取得エラー (ffprobe): ${err.message}`); // エラーメッセージを表示
-                return reject(`動画の長さ取得エラー: ${err.message}`); // Promiseを失敗（reject）させます
+                console.error(`動画の長さ取得エラー (ffprobe): ${err.message}`);
+                return reject(`動画の長さ取得エラー: ${err.message}`); // エラー時はPromiseをreject
             }
-            // メタデータの中から動画の長さ（duration）を秒単位で取り出します
+            // メタデータオブジェクトのformat.durationプロパティに動画の長さ（秒）が含まれています。
             const durationInSeconds = metadata.format.duration;
             if (durationInSeconds) {
-                 console.log(`動画の長さが取得されました: ${durationInSeconds} 秒`); // 長さが取得できたら表示
-                 resolve(durationInSeconds); // 長さをPromiseの成功（resolve）として返します
+                 console.log(`動画の長さが取得されました: ${durationInSeconds} 秒`);
+                 resolve(durationInSeconds); // 長さが取得できたらPromiseをresolve
             } else {
-                 console.warn(`動画の長さがメタデータから取得できませんでした: ${filePath}`); // 長さがメタデータになかった場合
-                 resolve(0); // その場合は0秒として扱います
+                 console.warn(`動画の長さがメタデータから取得できませんでした: ${filePath}`);
+                 resolve(0); // 取得できない場合は0秒として扱う
             }
         });
     });
 }
 
 /**
- * YouTubeの動画を指定されたURLからダウンロードする関数です。
- * yt-dlpという外部プログラムを使います。ダウンロードした動画はWebM形式になります。
- * ダウンロードが終わったら、動画の長さに応じて自動的に削除されるようにスケジュールします。
- * @param {string} youtubeUrl - ダウンロードしたいYouTube動画のアドレス（URL）
- * @returns {Promise<string>} ダウンロードした動画ファイルがどこに保存されたかを示すパスを教えてくれるPromise
+ * yt-dlpを使用してYouTube動画をWebM形式でダウンロードする関数。
+ * ダウンロード完了後、動画の長さに応じて自動削除をスケジュールします。
+ * @param {string} youtubeUrl - ダウンロード対象のYouTube動画URL。
+ * @returns {Promise<string>} ダウンロードされた動画ファイルの絶対パスを解決するPromise。
  */
 function downloadVideo(youtubeUrl) {
-    // Promiseを返します。ダウンロードが成功したらresolve、失敗したらrejectを呼び出します。
     return new Promise((resolve, reject) => {
-        // ランダムなファイル名（.webmという拡張子付き）を生成します
-        const fileName = generateRandomFileName() + '.webm';
-        // ダウンロードしたファイルを保存する場所の絶対パス（パソコンのどこにあるかを正確に示すパス）を生成します
-        const outputPath = path.join(downloadsDir, fileName);
+        const fileName = generateRandomFileName() + '.webm'; // ランダムなファイル名生成
+        const outputPath = path.join(downloadsDir, fileName); // 出力パス生成
 
-        // yt-dlpを実行するためのコマンド文字列を作成します
-        // -f bestvideo[ext=webm]+bestaudio[ext=webm]/bestvideo+bestaudio: WebM形式の最高画質と最高音質を選びます
-        // --merge-output-format webm: 動画と音声をWebMという一つのファイル形式にまとめます
-        // --output "${outputPath}": ダウンロードしたファイルをどこに保存するか指定します
-        // "${youtubeUrl}": ダウンロードしたいYouTube動画のURLです
+        // yt-dlpコマンド文字列の構築。
+        // -f bestvideo[ext=webm]+bestaudio[ext=webm]/bestvideo+bestaudio: WebM形式の最高画質・音質ストリームを選択。
+        // --merge-output-format webm: 選択したストリームをWebMコンテナにマージ。
+        // --output "${outputPath}": 出力ファイルパス指定。
         const command = `yt-dlp -f bestvideo[ext=webm]+bestaudio[ext=webm]/bestvideo+bestaudio --merge-output-format webm --output "${outputPath}" "${youtubeUrl}"`;
-        console.log(`Executing yt-dlp command: ${command}`); // 実行するコマンドをコンソールに表示します
+        console.log(`Executing yt-dlp command: ${command}`);
 
-        // execを使って、作成したコマンドを実行します
+        // execでコマンドを実行。非同期処理。
         exec(command, (error, stdout, stderr) => {
             if (error) {
-                // コマンドの実行中にエラーが発生した場合
-                console.error(`yt-dlpエラー: ${stderr}`); // エラーメッセージをコンソールに表示
-                reject(`yt-dlpの実行中にエラーが発生しました: ${stderr}`); // Promiseを失敗（reject）させます
+                console.error(`yt-dlpエラー: ${stderr}`);
+                reject(`yt-dlpの実行中にエラーが発生しました: ${stderr}`); // エラー時はPromiseをreject
             } else {
-                // コマンドがエラーなく完了した場合
-                console.log(`yt-dlp標準出力:\n${stdout}`); // yt-dlpが出力したメッセージを表示
-                // 指定した場所にファイルが本当にダウンロードされたか確認します
+                console.log(`yt-dlp標準出力:\n${stdout}`);
+                // コマンド成功後、ファイルが実際に作成されたか確認。
                 if (fs.existsSync(outputPath)) {
-                     console.log(`動画が正常にダウンロードされました (WebM): ${outputPath}`); // ダウンロード成功メッセージ
+                     console.log(`動画が正常にダウンロードされました (WebM): ${outputPath}`);
 
-                     // ダウンロードした動画の長さを調べます
+                     // 動画の長さ取得と削除スケジューリング
                      getVideoDuration(outputPath)
                          .then(durationInSeconds => {
-                             const maxDelaySeconds = 7200; // 動画を自動削除するまでの最大時間（2時間 = 7200秒）
-                             const calculatedDelaySeconds = durationInSeconds * 3; // 動画の長さの3倍の時間を計算します
-                             // 最終的な削除までの時間は、「動画の長さの3倍」と「最大2時間」の短い方を選びます
+                             const maxDelaySeconds = 7200; // 最大削除遅延時間 (2時間)
+                             const calculatedDelaySeconds = durationInSeconds * 3; // 動画の長さの3倍
+                             // 削除遅延時間は計算値と最大遅延時間の小さい方
                              const finalDelaySeconds = Math.min(calculatedDelaySeconds, maxDelaySeconds);
-                             const finalDelayMilliseconds = finalDelaySeconds * 1000; // 秒をミリ秒に変換します
+                             const finalDelayMilliseconds = finalDelaySeconds * 1000;
 
-                             // 計算した時間が経ったら動画を削除するようにスケジュールします
-                             deleteVideoAfterDelay(outputPath, finalDelayMilliseconds);
-                             resolve(outputPath); // ダウンロードしたファイルのパスをPromiseの成功（resolve）として返します
+                             deleteVideoAfterDelay(outputPath, finalDelayMilliseconds); // 削除をスケジュール
+                             resolve(outputPath); // ダウンロード成功としてPromiseをresolve
                          })
                          .catch(durationError => {
-                             // 動画の長さ取得に失敗した場合
-                             console.error(`動画の長さ取得エラー発生、デフォルトの削除時間を適用: ${durationError}`); // エラーメッセージを表示
-                             const defaultDelayMilliseconds = 60 * 60 * 1000; // デフォルトの削除時間（1時間）
-                             deleteVideoAfterDelay(outputPath, defaultDelayMilliseconds); // デフォルトの時間で削除をスケジュールします
-                             resolve(outputPath); // 長さ取得は失敗しましたが、ダウンロード自体は成功しているのでパスを返します
+                             // 長さ取得エラー時もデフォルト時間で削除をスケジュール
+                             console.error(`動画の長さ取得エラー発生、デフォルトの削除時間を適用: ${durationError}`);
+                             const defaultDelayMilliseconds = 60 * 60 * 1000; // デフォルト1時間
+                             deleteVideoAfterDelay(outputPath, defaultDelayMilliseconds);
+                             resolve(outputPath); // エラーでもダウンロード自体は成功しているのでresolve
                          });
 
                 } else {
-                     // yt-dlpはエラーを出さなかったのに、ファイルが見つからない場合
+                     // コマンドは成功したがファイルがない場合
                      console.error(`yt-dlpはエラーを報告しませんでしたが、出力ファイルが見つかりません: ${outputPath}`);
-                     reject(`yt-dlpは成功しましたが、出力ファイルが見つかりません。`); // Promiseを失敗（reject）させます
+                     reject(`yt-dlpは成功しましたが、出力ファイルが見つかりません。`); // Promiseをreject
                 }
             }
         });
@@ -178,403 +169,385 @@ function downloadVideo(youtubeUrl) {
 }
 
 /**
- * 指定されたURLのウェブサイトのコンテンツを取得する関数です。
- * GETやPOSTなどのHTTPメソッド、ヘッダー、送信データなどを指定できます。
- * リダイレクト（アクセスしたURLから別のURLに自動的に飛ばされること）も処理し、最終的にどのURLにたどり着いたかも教えてくれます。
- * @param {string} url - コンテンツを取得したいウェブサイトのアドレス（URL）
- * @param {string} method - HTTPメソッド（'GET'や'POST'など）。デフォルトは'GET'です。
- * @param {object} headers - リクエストに含めたい追加のヘッダー情報（例: どのブラウザからアクセスしているか、など）。デフォルトは空っぽです。
- * @param {any} data - POSTリクエストなどで送信したいデータ。デフォルトはnull（データなし）です。
- * @returns {Promise<{data: Buffer, headers: object, finalUrl: string}>} 取得したコンテンツ（Buffer形式）、応答ヘッダー、最終的なURLを含むオブジェクトを教えてくれるPromise
+ * 指定されたURLからウェブコンテンツを非同期で取得する汎用関数。
+ * HTTPメソッド、ヘッダー、リクエストボディを指定可能。リダイレクトを追跡し、最終URLを返します。
+ * 応答データはBufferとして受け取り、文字コード処理は呼び出し元で行います。
+ * @param {string} url - 取得対象のURL。
+ * @param {string} method - HTTPメソッド (GET, POSTなど)。デフォルトは 'GET'。
+ * @param {object} headers - リクエストヘッダーオブジェクト。デフォルトは空オブジェクト。
+ * @param {any} data - リクエストボディデータ (POSTなどで使用)。デフォルトはnull。
+ * @returns {Promise<{data: Buffer, headers: object, finalUrl: string}>} 応答データ(Buffer)、応答ヘッダー、リダイレクト後の最終URLを含むオブジェクトを解決するPromise。
  */
 async function fetchWebPage(url, method = 'GET', headers = {}, data = null) {
     try {
-        // axiosを使ってHTTPリクエストを送るための設定（オプション）を作成します
+        // axiosリクエストオプションの設定
         const options = {
-            method: method, // HTTPメソッド
-            url: url, // アクセスするURL
-            responseType: 'arraybuffer', // 応答データをそのままのバイト列（Buffer）として受け取ります（文字コードの処理を自分でやるため）
-            headers: { // リクエストヘッダーの設定
-                // ウェブブラウザが通常送るような、基本的なヘッダーを設定します
+            method: method,
+            url: url,
+            responseType: 'arraybuffer', // 応答データをBufferとして取得。これにより、後続で適切な文字コードでデコードできます。
+            headers: { // リクエストヘッダーの設定。ブラウザからの一般的なヘッダーを模倣しつつ、引数で指定されたヘッダーをマージ。
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8', // 受け取りたい言語の優先順位
-                'Connection': 'keep-alive', // 接続を維持する設定
-                'Upgrade-Insecure-Requests': '1', // 可能であればHTTPSにアップグレードしたいという意思表示
-                ...headers, // 引数で渡された追加のヘッダーをここに追加します（同じ名前のヘッダーがあれば上書きされます）
+                'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                ...headers, // 渡されたヘッダーでデフォルトをオーバーライドまたは追加
             },
-            maxRedirects: 20 // リダイレクトを最大20回まで追跡します
+            maxRedirects: 20 // 最大リダイレクト追跡数
         };
-        // 送信データ（data）がある場合は、オプションに追加します
         if (data) {
-            options.data = data; // リクエストボディにデータを設定
+            options.data = data; // リクエストボディの設定
         }
 
-        // axiosを使って実際にHTTPリクエストを送信し、応答を待ちます
+        // axiosによる非同期HTTPリクエスト実行
         const response = await axios(options);
-        // リダイレクトがあった場合、最終的にアクセスしたURLを取得します (なければ元のURL)
+        // リダイレクト後の最終的なURLを取得。response.request.responseURLに格納されます。
         const finalUrl = response.request.responseURL || url;
-        // リダイレクトが発生したらコンソールに表示します
         if (finalUrl !== url) {
             console.log(`Redirected from ${url} to ${finalUrl}`);
         }
-        // 取得したデータ（Buffer）、応答ヘッダー、最終URLをまとめて返します
+        // 取得したデータ、ヘッダー、最終URLをオブジェクトとして返却
         return { data: response.data, headers: response.headers, finalUrl: finalUrl };
     } catch (error) {
-        // HTTPリクエスト中に何か問題が起きた場合
-        console.error(`ページ取得エラー: ${error.message}`); // エラーメッセージを表示
-        if (error.response) { // もしサーバーから応答（エラー応答含む）があった場合
-            console.error(`ステータスコード: ${error.response.status}`); // HTTPステータスコード（404, 500など）を表示
-            if (error.response.data instanceof Buffer) { // 応答データがBuffer形式の場合
+        // エラーハンドリング
+        console.error(`ページ取得エラー: ${error.message}`);
+        if (error.response) { // サーバーからの応答があった場合（HTTPエラーなど）
+            console.error(`ステータスコード: ${error.response.status}`);
+            if (error.response.data instanceof Buffer) {
                 try {
-                    // UTF-8でデコードして応答データを表示しようとします
+                    // エラー応答ボディをUTF-8でデコードして表示を試みる
                     console.error(`レスポンスデータ: ${iconv.decode(error.response.data, 'utf-8')}`);
                 } catch (e) {
-                    // デコードに失敗したら、バイト列を16進数で表示
+                    // デコード失敗時は16進数で表示
                     console.error(`レスポンスデータ (デコード失敗): ${error.response.data.toString('hex')}`);
                 }
-            } else { // 応答データがBufferでない場合
+            } else {
                  console.error(`レスポンスデータ: ${error.response.data}`);
             }
-            console.error(`レスポンスヘッダー: ${JSON.stringify(error.response.headers)}`); // 応答ヘッダーをJSON形式で表示
-        } else if (error.request) { // リクエストは送ったけど、サーバーから全く応答がなかった場合
+            console.error(`レスポンスヘッダー: ${JSON.stringify(error.response.headers)}`);
+        } else if (error.request) { // リクエストは送信されたが応答がなかった場合
             console.error('リクエストは行われませんでしたが、応答がありませんでした');
-            console.error(error.request); // リクエストの詳細を表示
-        } else { // リクエストを送る前の設定段階でエラーが発生した場合
+            console.error(error.request);
+        } else { // リクエスト設定自体に問題があった場合
             console.error('リクエストの設定中にエラーが発生しました');
         }
-        throw new Error(`ページ取得エラー: ${error.message}`); // 発生したエラーを呼び出し元に伝えます
+        throw new Error(`ページ取得エラー: ${error.message}`); // エラーを再スローして呼び出し元に伝播
     }
 }
 
 /**
- * 取得したコンテンツのバイト列（Buffer）を、正しい文字コードで文字列に変換する関数です。
- * サーバーからの応答ヘッダーにある「Content-Type」や、HTMLの中にある文字コード指定（metaタグ）を見て、どの文字コードで書かれているかを判断します。
- * @param {Buffer} buffer - 文字列に変換したいバイト列データ
- * @param {object} headers - サーバーからの応答ヘッダー
- * @returns {string} 文字コード変換された文字列
+ * Buffer形式のコンテンツを指定されたヘッダー情報に基づいて適切な文字コードで文字列にデコードする関数。
+ * Content-TypeヘッダーやHTML内のmetaタグからエンコーディングを推測します。
+ * @param {Buffer} buffer - デコード対象のBufferデータ。
+ * @param {object} headers - 応答ヘッダーオブジェクト。エンコーディング情報が含まれる可能性がある。
+ * @returns {string} デコードされた文字列。デコード失敗時はUTF-8フォールバックを試みる。
  */
 function decodeContent(buffer, headers) {
-    let encoding = 'utf-8'; // まずは一般的なUTF-8だと仮定します
+    let encoding = 'utf-8'; // デフォルトエンコーディング
 
-    // 応答ヘッダーの「Content-Type」を見て、文字コード情報（charset=...）があるか確認します
+    // 1. Content-Typeヘッダーからのエンコーディング検出
     const contentType = headers['content-type'];
     if (contentType) {
-        const charsetMatch = contentType.match(/charset=([^;]+)/i); // 「charset=」の後に続く文字コード名を正規表現で探します
+        const charsetMatch = contentType.match(/charset=([^;]+)/i); // charset=... を抽出
         if (charsetMatch && charsetMatch[1]) {
-            const determinedEncoding = charsetMatch[1].toLowerCase(); // 見つかった文字コード名を小文字に変換
-            // iconv-liteという部品がその文字コードを扱えるか確認します
-            if (iconv.encodingExists(determinedEncoding)) {
-                encoding = determinedEncoding; // 扱えるなら、その文字コードを使います
-                console.log(`Detected encoding from Content-Type: ${encoding}`); // どの文字コードを使ったか表示
+            const determinedEncoding = charsetMatch[1].toLowerCase();
+            if (iconv.encodingExists(determinedEncoding)) { // iconv-liteがサポートしているか確認
+                encoding = determinedEncoding;
+                console.log(`Detected encoding from Content-Type: ${encoding}`);
             } else {
-                // 扱えない文字コードだった場合
-                console.warn(`Unsupported encoding from Content-Type: ${determinedEncoding}, falling back to ${encoding}`); // 警告を表示し、最初の仮定（UTF-8）を使います
+                console.warn(`Unsupported encoding from Content-Type: ${determinedEncoding}, falling back to ${encoding}`);
             }
         }
     }
 
-    // Content-TypeがHTMLの場合、HTMLの中のmetaタグ（<meta charset="...">など）も見て、文字コードを探します
+    // 2. Content-Typeがtext/htmlの場合、HTML内のmetaタグからのエンコーディング検出
+    // Content-Typeヘッダーよりもmetaタグの方が優先される場合があります。
     if (contentType && contentType.includes('text/html')) {
         try {
-            // HTMLの最初の部分（最大4096バイト）だけをUTF-8で一度デコードしてみて、metaタグを探します
-            // fatal: falseは、エラーがあっても処理を止めない設定です
+            // HTMLの最初のチャンク（エンコーディング情報が含まれる可能性が高い部分）をUTF-8で仮デコード。
+            // fatal: falseは、仮デコード時の文字化けエラーを無視する設定です。
             const tempHtml = iconv.decode(buffer.slice(0, 4096), 'utf-8', { fatal: false, specialChars: true });
-            // <meta charset="..."> または <meta http-equiv="Content-Type" content="...; charset=..."> の形式でcharsetを探す正規表現
+            // <meta charset="..."> または <meta http-equiv="Content-Type" content="...; charset=..."> を正規表現で検索。
             const charsetMetaMatch = tempHtml.match(/<meta\s+[^>]*charset=["']?([^"' >]+)["']?/i);
             if (charsetMetaMatch && charsetMetaMatch[1]) {
-                const determinedEncoding = charsetMetaMatch[1].toLowerCase(); // 見つかった文字コード名を小文字に変換
-                 // iconv-liteがその文字コードを扱えるか確認します
+                const determinedEncoding = charsetMetaMatch[1].toLowerCase();
                  if (iconv.encodingExists(determinedEncoding)) {
-                    encoding = determinedEncoding; // 扱えるなら、その文字コードを使います
-                    console.log(`Detected encoding from meta tag: ${encoding}`); // どの文字コードを使ったか表示
+                    encoding = determinedEncoding; // metaタグで検出されたエンコーディングを優先
+                    console.log(`Detected encoding from meta tag: ${encoding}`);
                 } else {
-                    // 扱えない文字コードだった場合
-                    console.warn(`Unsupported encoding from meta tag: ${determinedEncoding}, falling back to ${encoding}`); // 警告を表示し、Content-Typeまたは最初の仮定の文字コードを使います
+                    console.warn(`Unsupported encoding from meta tag: ${determinedEncoding}, falling back to ${encoding}`);
                 }
             }
         } catch (e) {
-            console.error("Error detecting encoding from meta tag:", e); // metaタグからの文字コード検出中にエラーが発生した場合
+            console.error("Error detecting encoding from meta tag:", e);
         }
     }
 
-    // 最終的に決まった文字コードを使って、バイト列（buffer）を文字列に変換します
+    // 3. 最終的に決定したエンコーディングでBufferをデコード
     try {
         return iconv.decode(buffer, encoding);
     } catch (e) {
-        // もしその文字コードでの変換に失敗した場合
-        console.error(`Failed to decode with ${encoding}, attempting utf-8:`, e); // エラーを表示し、UTF-8で再度試みます
+        // 決定したエンコーディングでのデコードに失敗した場合、UTF-8でフォールバックを試みる
+        console.error(`Failed to decode with ${encoding}, attempting utf-8:`, e);
         try {
-             // UTF-8でデコードします (エラーがあっても処理を止めない設定付き)
+             // UTF-8でのデコード（エラーを致命的としない設定）
              return iconv.decode(buffer, 'utf-8', { fatal: false, specialChars: true });
         } catch (e2) {
              // UTF-8でも失敗した場合
-             console.error("Failed to decode with utf-8:", e2); // エラーを表示
-             return buffer.toString('utf-8'); // 最終手段として、BufferオブジェクトのtoString('utf-8')を使います
+             console.error("Failed to decode with utf-8:", e2);
+             // 最終手段としてBufferのtoString('utf-8')を使用（完全なデコードを保証しないが、何らかの文字列を得るため）
+             return buffer.toString('utf-8');
         }
     }
 }
 
 
 /**
- * ウェブサイトのHTMLコンテンツの中にある、他のページへのリンク（aタグのhref）や画像のアドレス（imgタグのsrc）、フォームの送信先（formタグのaction）などを、
- * このプロキシサーバーを経由するように書き換える関数です。
- * 元のURLは、後で元に戻せるようにBase64という形式でエンコードして、プロキシのURLに含めます。
- * @param {string} html - 書き換えたいHTMLコンテンツの文字列
- * @param {string} baseUrl - このHTMLコンテンツを取得したページの元のURL（リダイレクト後の最終的なURL）。相対パス（例: /images/logo.png）を絶対パス（例: https://example.com/images/logo.png）に変換するために使います。
- * @returns {string} URLがプロキシ経由に書き換えられたHTMLコンテンツの文字列
+ * HTMLコンテンツ内のURL（リンク、画像、スクリプト、CSSなど）およびフォームのaction属性を、
+ * このプロキシサーバーを経由するように書き換える関数。
+ * 元のURLはBase64エンコードされ、プロキシURLのクエリパラメータとして埋め込まれます。
+ * これにより、クライアントが書き換えられたURLにアクセスした際に、プロキシが元のURLを特定してコンテンツを取得できます。
+ * @param {string} html - 書き換え対象のHTMLコンテンツ文字列。
+ * @param {string} baseUrl - 元のHTMLコンテンツが取得されたページの最終的なURL。相対URLの絶対URLへの解決に使用。
+ * @returns {string} URLが書き換えられたHTMLコンテンツ文字列。
  */
 function rewriteUrls(html, baseUrl) {
-    const $ = cheerio.load(html); // Cheerioを使って、HTMLを操作できる状態にします
+    const $ = cheerio.load(html); // CheerioでHTMLをパースし、DOM操作可能なオブジェクトを取得。
 
-    // ウェブサイトのアドレス（URL）が含まれる可能性のあるHTMLのタグと、そのアドレスが書かれている属性の名前をリストアップします
+    // URLを含む可能性のあるHTML要素とその属性のマッピング。
     const elementsWithUrls = {
-        'a': 'href', // リンクのタグとそのアドレス属性
-        'link': 'href', // CSSファイルなどを読み込むタグとそのアドレス属性
-        'img': 'src', // 画像を表示するタグとそのアドレス属性
-        'script': 'src', // JavaScriptファイルを読み込むタグとそのアドレス属性
-        'iframe': 'src', // 別のページを埋め込むタグとそのアドレス属性
-        'source': 'src', // videoタグやaudioタグの中で、動画や音声のファイルを指定するタグとそのアドレス属性
-        'video': 'src', // videoタグ自体のアドレス属性
-        'audio': 'src', // audioタグ自体のアドレス属性
-        'track': 'src', // videoタグなどで字幕ファイルを指定するタグとそのアドレス属性
+        'a': 'href', // <a> タグの href 属性
+        'link': 'href', // <link> タグの href 属性 (CSS, faviconなど)
+        'img': 'src', // <img> タグの src 属性
+        'script': 'src', // <script> タグの src 属性
+        'iframe': 'src', // <iframe> タグの src 属性
+        'source': 'src', // <video>, <audio> タグ内の <source> タグの src 属性
+        'video': 'src', // <video> タグ自体の src 属性
+        'audio': 'src', // <audio> タグ自体の src 属性
+        'track': 'src', // <track> タグの src 属性 (字幕など)
     };
 
-    // 上でリストアップした各タグの種類ごとに処理を繰り返します
+    // 各要素タイプに対してURL書き換え処理を実行。
     Object.keys(elementsWithUrls).forEach(selector => {
-        const attribute = elementsWithUrls[selector]; // 処理対象の属性名（hrefまたはsrc）を取得します
-        $(selector).each((index, element) => { // 指定したタグ（セレクタ）にマッチする要素を一つずつ処理します
-            const $element = $(element); // その要素をCheerioで扱えるオブジェクトとして取得
-            let originalUrl = $element.attr(attribute); // その要素の元の属性値（URL）を取得します
+        const attribute = elementsWithUrls[selector];
+        $(selector).each((index, element) => {
+            const $element = $(element);
+            let originalUrl = $element.attr(attribute); // 元の属性値を取得。
 
-            // URLが存在し、かつ「data:」で始まるデータURLや、「#」で始まるページ内リンクでない場合のみ処理します
+            // URLが存在し、データURL (data:) やページ内リンク (#) でない場合のみ処理。
             if (originalUrl && !originalUrl.startsWith('data:') && !originalUrl.startsWith('#')) {
                 try {
-                    // 元のURLが相対パス（例: /about）の場合、baseUrl（そのページがある場所）と組み合わせて絶対パス（例: https://example.com/about）に変換します
+                    // 相対URLをbaseUrlを基準に絶対URLに解決。
                     const resolvedUrl = urlModule.resolve(baseUrl, originalUrl);
-                    // 新しいプロキシ経由のURLを作成します。形式は「/proxy?url=Base64エンコードされた元のURL」です。
-                    // Buffer.from(resolvedUrl).toString('base64')で、絶対パスをBase64という形式の文字列に変換しています。
+                    // プロキシ経由の新しいURLを作成。形式は '/proxy?url=<Base64エンコードされた絶対URL>'。
+                    // Base64エンコードは、URLに含まれる特殊文字がクエリパラメータを壊さないようにするためと、元のURLを直接表示させないため。
                     const proxiedUrl = `/proxy?url=${Buffer.from(resolvedUrl).toString('base64')}`;
-                    // 要素の元の属性値（hrefやsrc）を、作成したプロキシ経由のURLに書き換えます
-                    $element.attr(attribute, proxiedUrl);
+                    $element.attr(attribute, proxiedUrl); // 要素の属性値を書き換え。
                 } catch (e) {
-                    // URLの書き換え中にエラーが発生した場合
-                    console.error(`URLの書き換え中にエラーが発生しました: ${originalUrl} (Base: ${baseUrl})`, e); // エラーの内容を表示
+                    console.error(`URLの書き換え中にエラーが発生しました: ${originalUrl} (Base: ${baseUrl})`, e);
                 }
             }
         });
     });
 
-    // フォーム（formタグ）の送信先（action属性）を書き換える処理です
+    // <form> タグの action 属性の書き換え。
+    // フォーム送信もプロキシを経由するようにします。元の送信先URLとメソッドは隠しフィールドとして埋め込みます。
     $('form').each((index, element) => {
-        const $element = $(element); // フォーム要素をCheerioオブジェクトとして取得
-        let originalAction = $element.attr('action'); // 元のaction属性値を取得
-        const method = $element.attr('method') || 'GET'; // フォームの送信方法（method属性）を取得します。指定がない場合はGETとみなします。
+        const $element = $(element);
+        let originalAction = $element.attr('action');
+        const method = $element.attr('method') || 'GET'; // デフォルトメソッドはGET。
 
-        // action属性が存在し、かつデータURLでない場合
+        // action属性が存在し、データURLでない場合。
         if (originalAction && !originalAction.startsWith('data:')) {
              try {
-                // 元のactionのURLをbaseUrlに対して絶対URLに変換します
+                // actionのURLをbaseUrlを基準に絶対URLに解決。
                 const resolvedActionUrl = urlModule.resolve(baseUrl, originalAction);
-                $element.attr('action', '/proxy'); // フォームの送信先を、このプロキシサーバーの「/proxy」というアドレスに書き換えます
-                $element.attr('method', 'POST'); // フォームの送信方法を強制的にPOSTにします（プロキシでデータを受け取るため）
-                // 元の送信先URLと元の送信方法を、フォームの中に隠しフィールド（type="hidden"）として追加します。
-                // これで、プロキシサーバーは「このフォームは元々このURLにこの方法で送られるはずだったんだな」と知ることができます。
+                $element.attr('action', '/proxy'); // action属性をプロキシのエンドポイントに書き換え。
+                $element.attr('method', 'POST'); // プロキシでデータを受け取るため、メソッドをPOSTに強制。
+                // 元のターゲットURLとメソッドをBase64エンコードして隠しフィールドとしてフォームに追加。
                 $element.append(`<input type="hidden" name="__proxy_target_url" value="${Buffer.from(resolvedActionUrl).toString('base64')}">`);
-                $element.append(`<input type="hidden" name="__proxy_target_method" value="${method.toUpperCase()}">`); // メソッド名は大文字にします
+                $element.append(`<input type="hidden" name="__proxy_target_method" value="${method.toUpperCase()}">`);
              } catch (e) {
-                 // action書き換え中にエラーが発生した場合
-                 console.error(`Form Actionの書き換え中にエラーが発生しました: ${originalAction} (Base: ${baseUrl})`, e); // エラーの内容を表示
+                 console.error(`Form Actionの書き換え中にエラーが発生しました: ${originalAction} (Base: ${baseUrl})`, e);
              }
         } else if (!originalAction) {
-             // action属性が指定されていない場合（これは通常、現在のページにフォームの内容を送信するという意味です）
-             const resolvedActionUrl = baseUrl; // この場合は、現在のページのURL（baseUrl）を送信先とみなします
-             $element.attr('action', '/proxy'); // 送信先をプロキシの「/proxy」に書き換え
-             $element.attr('method', 'POST'); // 送信方法を強制的にPOSTに
-             // 元の送信先URL（現在のページURL）と元の送信方法を隠しフィールドとして追加します
+             // action属性が指定されていない場合（通常は現在のページへのPOSTとみなされる）。
+             const resolvedActionUrl = baseUrl; // ベースURLをターゲットとする。
+             $element.attr('action', '/proxy'); // action属性をプロキシのエンドポイントに書き換え。
+             $element.attr('method', 'POST'); // メソッドをPOSTに強制。
+             // 元のターゲットURL（ベースURL）とメソッドを隠しフィールドとして追加。
              $element.append(`<input type="hidden" name="__proxy_target_url" value="${Buffer.from(resolvedActionUrl).toString('base64')}">`);
              $element.append(`<input type="hidden" name="__proxy_target_method" value="${method.toUpperCase()}">`);
         }
     });
 
-    // HTMLのheadタグの中にある <base> タグを削除します。
-    // <base>タグは、ページ内の相対パスの基準となるURLを指定するものですが、
-    // プロキシがURLを書き換えるため、元の<base>タグがあるとURLの解決がおかしくなる可能性があります。
+    // <base> タグの削除。
+    // <base>タグは相対URLの解決基準を指定しますが、プロキシがURLを書き換えるため、元のbaseタグがあると予期しない動作を引き起こす可能性があります。
     $('base').remove();
 
-    // <style> タグ（HTMLの中に直接書かれたCSS）の中にある url() で指定されたURLを書き換える処理です
+    // <style> タグ（インラインCSS）内の url() の書き換え。
     $('style').each((index, element) => {
-        const $element = $(element); // style要素をCheerioオブジェクトとして取得
-        let styleContent = $element.html(); // styleタグの中のCSSのコードを取得
-        if (styleContent) { // CSSコードが存在する場合
-            // CSSコードの中から「url(...)」や「url('...')」、「url("...")」の形式で書かれた部分を正規表現で探し、置き換えます
+        const $element = $(element);
+        let styleContent = $element.html(); // styleタグ内のCSSコンテンツを取得。
+        if (styleContent) {
+            // CSS内の url(...) または url('...') または url("...") を正規表現で検索・置換。
             styleContent = styleContent.replace(/url\(['"]?(.*?)['"]?\)/g, (match, url) => {
-                // url(...) の中のURLが存在し、データURLでない場合のみ処理
+                // URLが存在し、データURLでない場合のみ処理。
                 if (url && !url.startsWith('data:')) {
                     try {
-                        // CSS内のURLが相対パスの場合、baseUrlに対して絶対URLに変換します
+                        // CSS内のURLをbaseUrlを基準に絶対URLに解決。
                         const resolvedUrl = urlModule.resolve(baseUrl, url);
-                        // プロキシ経由のURLを作成します。形式は「/proxy?url=Base64エンコードされた絶対URL」です。
+                        // プロキシ経由のURLを作成。
                         const proxiedUrl = `/proxy?url=${Buffer.from(resolvedUrl).toString('base64')}`;
-                        return `url('${proxiedUrl}')`; // 書き換えたプロキシURLを含む「url('...')」形式の文字列を返します
+                        return `url('${proxiedUrl}')`; // 書き換えたプロキシURLを含むurl()形式の文字列を返す。
                     } catch (e) {
-                         // URL書き換え中にエラーが発生した場合
-                         console.error(`Style URLの書き換え中にエラーが発生しました: ${url} (Base: ${baseUrl})`, e); // エラーの内容を表示
-                         return match; // エラー時は元の文字列をそのまま返します
+                         console.error(`Style URLの書き換え中にエラーが発生しました: ${url} (Base: ${baseUrl})`, e);
+                         return match; // エラー時は元の文字列をそのまま返す。
                     }
                 }
-                return match; // データURLなどの場合は元の文字列をそのまま返します
+                return match; // データURLなどの場合は元の文字列をそのまま返す。
             });
-            $element.html(styleContent); // 書き換えたCSSコードでstyleタグの内容を更新します
+            $element.html(styleContent); // 書き換えたCSSコンテンツでstyleタグの内容を更新。
         }
     });
 
-    return $.html(); // 全ての書き換えが終わったHTMLコンテンツ全体を文字列として返します
+    return $.html(); // 書き換え後のHTMLコンテンツ全体を文字列として返す。
 }
 
 /**
- * 外部CSSファイル（.cssファイル）のコンテンツの中にある url() で指定されたURLを、プロキシ経由に書き換える関数です。
- * rewriteUrls関数の中のstyleタグの処理と似ていますが、こちらはCSSファイル全体を対象とします。
- * @param {string} css - 書き換えたいCSSコンテンツの文字列
- * @param {string} baseUrl - このCSSコンテンツを読み込んだページの元のURL（リダイレクト後の最終的なURL）。相対パスの解決に使用されます。
- * @returns {string} URLがプロキシ経由に書き換えられたCSSコンテンツの文字列
+ * 外部CSSコンテンツ内の url() をプロキシ経由に書き換える関数。
+ * rewriteUrls内のstyleタグ処理と同様のロジックですが、CSSファイル全体を対象とします。
+ * @param {string} css - 書き換え対象のCSSコンテンツ文字列。
+ * @param {string} baseUrl - 元のCSSコンテンツを読み込んだページの最終的なURL。相対URLの絶対URLへの解決に使用。
+ * @returns {string} URLが書き換えられたCSSコンテンツ文字列。
  */
 function rewriteCssUrls(css, baseUrl) {
-    // CSSコードの中から「url(...)」や「url('...')」、「url("...")」の形式で書かれた部分を正規表現で探し、置き換えます
+    // CSS内の url(...) または url('...') または url("...") を正規表現で検索・置換。
     const rewrittenCss = css.replace(/url\(['"]?(.*?)['"]?\)/g, (match, url) => {
-        // url(...) の中のURLが存在し、データURLでない場合のみ処理
+        // URLが存在し、データURLでない場合のみ処理。
         if (url && !url.startsWith('data:')) {
             try {
-                // CSS内のURLが相対パスの場合、baseUrlに対して絶対URLに変換します
+                // CSS内のURLをbaseUrlを基準に絶対URLに解決。
                 const resolvedUrl = urlModule.resolve(baseUrl, url);
-                // プロキシ経由のURLを作成します。形式は「/proxy?url=Base64エンコードされた絶対URL」です。
+                // プロキシ経由のURLを作成。
                 const proxiedUrl = `/proxy?url=${Buffer.from(resolvedUrl).toString('base64')}`;
-                return `url('${proxiedUrl}')`; // 書き換えたプロキシURLを含む「url('...')」形式の文字列を返します
+                return `url('${proxiedUrl}')`; // 書き換えたプロキシURLを含むurl()形式の文字列を返す。
             } catch (e) {
-                 // URL書き換え中にエラーが発生した場合
-                 console.error(`CSS URLの書き換え中にエラーが発生しました: ${url} (Base: ${baseUrl})`, e); // エラーの内容を表示
-                 return match; // エラー時は元の文字列をそのまま返します
+                 console.error(`CSS URLの書き換え中にエラーが発生しました: ${url} (Base: ${baseUrl})`, e);
+                 return match; // エラー時は元の文字列をそのまま返す。
             }
         }
-        return match; // データURLなどの場合は元の文字列をそのまま返します
+        return match; // データURLなどの場合は元の文字列をそのまま返す。
     });
-    return rewrittenCss; // 書き換え後のCSSコンテンツ全体を文字列として返します
+    return rewrittenCss; // 書き換え後のCSSコンテンツを文字列として返す。
 }
 
-// ユーザーがログインしているか（認証済みか）を確認するためのミドルウェア関数です。
-// この関数をルートハンドラ（特定のURLへのリクエストを処理する関数）の前に挟むことで、ログインしていないユーザーからのアクセスを防ぐことができます。
+// 認証済みユーザーのみアクセスを許可するミドルウェア。
+// セッションにauthenticatedフラグがtrueで設定されているか確認します。
 function isAuthenticated(req, res, next) {
-    // セッション情報が存在し、かつセッションに「authenticated」というフラグがtrueで保存されているか確認します
+    // セッションが存在し、かつauthenticatedプロパティがtrueの場合
     if (req.session && req.session.authenticated) {
-        return next(); // 認証済みであれば、次の処理（本来のルートハンドラ）に進みます
+        return next(); // 次のミドルウェアまたはルートハンドラへ処理を渡す。
     } else {
-        res.redirect('/login'); // 認証されていない場合は、ログインページに自動的にリダイレクトします
+        res.redirect('/login'); // 認証されていない場合はログインページへリダイレクト。
     }
 }
 
-// '/login' というアドレスへのGETリクエスト（ブラウザで直接アクセスした場合など）を処理する部分です。
-// ログインページを表示します。
+// ログインページのGETリクエストハンドラ。
+// ログインフォームを含むHTMLをクライアントに送信します。
 app.get('/login', (req, res) => {
-    // ログインページのHTMLコードをクライアント（ブラウザ）に送信します。
-    // ここに書かれているHTMLがブラウザに表示されます。
     res.send(`
         <!DOCTYPE html>
         <html>
         <head>
-            <meta charset="UTF-8"> // 文字コードをUTF-8に設定
-            <meta name="viewport" content="width=device-width, initial-scale=1.0"> // スマートフォンなど、画面の大きさに合わせて表示を調整する設定
-            <title>ログイン</title> // ページのタイトル
-            <style> // ページの見た目を整えるCSSスタイル
-                body { font-family: sans-serif; margin: 40px; background-color: #f4f4f4; color: #333; display: flex; justify-content: center; align-items: center; min-height: 80vh; } // ページ全体のスタイル
-                .container { background-color: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; } // ログインフォームを囲む領域のスタイル
-                h1 { color: #0056b3; margin-bottom: 20px; } // タイトルのスタイル
-                form { display: flex; flex-direction: column; gap: 15px; } // フォーム全体のスタイル（要素を縦に並べ、間隔を空ける）
-                input[type="password"] { padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; } // パスワード入力欄のスタイル
-                button { padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; transition: background-color 0.3s ease; } // ボタンのスタイル
-                button:hover { background-color: #0056b3; } // ボタンにマウスカーソルが乗ったときのスタイル
-                .error { color: red; margin-top: 15px; } // エラーメッセージのスタイル（赤字で表示）
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>ログイン</title>
+            <style>
+                body { font-family: sans-serif; margin: 40px; background-color: #f4f4f4; color: #333; display: flex; justify-content: center; align-items: center; min-height: 80vh; }
+                .container { background-color: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; }
+                h1 { color: #0056b3; margin-bottom: 20px; }
+                form { display: flex; flex-direction: column; gap: 15px; }
+                input[type="password"] { padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; }
+                button { padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; transition: background-color 0.3s ease; }
+                button:hover { background-color: #0056b3; }
+                .error { color: red; margin-top: 15px; }
             </style>
         </head>
         <body>
             <div class="container">
-                <h1>プロキシサイト ログイン</h1> // ページのタイトル
-                <form action="/login" method="post"> // ログインフォーム。入力されたデータは/loginというアドレスにPOSTメソッドで送信されます。
-                    <input type="password" name="password" placeholder="パスワードを入力" required> // パスワード入力欄。name="password"で入力された値がサーバーに送られます。requiredは入力必須にする設定です。
-                    <button type="submit">ログイン</button> // 送信ボタン
+                <h1>プロキシサイト ログイン</h1>
+                <form action="/login" method="post">
+                    <input type="password" name="password" placeholder="パスワードを入力" required>
+                    <button type="submit">ログイン</button>
                 </form>
-                ${req.query.error ? `<p class="error">${req.query.error}</p>` : ''} // URLに「?error=何かメッセージ」という形でエラー情報が含まれていたら、そのメッセージを赤字で表示します。
+                ${req.query.error ? `<p class="error">${req.query.error}</p>` : ''}
             </div>
         </body>
         </html>
     `);
 });
 
-// '/login' というアドレスへのPOSTリクエスト（ログインフォームが送信されたとき）を処理する部分です。
-// ログイン処理を行います。
+// ログイン処理のPOSTリクエストハンドラ。
+// フォームから送信されたパスワードを検証し、一致すればセッションに認証済みフラグを設定します。
 app.post('/login', (req, res) => {
-    const password = req.body.password; // リクエストボディ（フォームから送られてきたデータ）の中から、name="password"の値（入力されたパスワード）を取り出します
+    const password = req.body.password; // リクエストボディからパスワードを取得。
 
-    // 入力されたパスワードが、コードで設定した秘密のパスワードと一致するか確認します
-    if (password === SECRET_PASSWORD) {
-        req.session.authenticated = true; // パスワードが正しければ、このユーザーのセッションに「authenticated」（認証済み）というフラグをtrueで保存します
-        res.redirect('/'); // 認証に成功したら、ルートパス（'/'）にリダイレクト（自動的に移動）させます
+    if (password === SECRET_PASSWORD) { // パスワードの一致確認。
+        req.session.authenticated = true; // セッションに認証済みフラグを設定。
+        res.redirect('/'); // 認証成功時はルートパスへリダイレクト。
     } else {
-        // パスワードが間違っている場合
-        // ログインページにリダイレクトし、エラーメッセージをURLに含めます。
-        // encodeURIComponentは、エラーメッセージにURLに使えない文字が含まれていても大丈夫なように変換する処理です。
+        // パスワード不一致時はエラーメッセージ付きでログインページへリダイレクト。
         res.redirect('/login?error=' + encodeURIComponent('パスワードが間違っています。'));
     }
 });
 
-// '/logout' というアドレスへのGETリクエスト（ログアウトリンクをクリックした場合など）を処理する部分です。
-// ログアウト処理を行います。
+// ログアウト処理のGETリクエストハンドラ。
+// セッションを破棄し、認証済み状態を解除します。
 app.get('/logout', (req, res) => {
-    // req.session.destroy()で、このユーザーのセッション情報をサーバーから削除します。
-    req.session.destroy((err) => {
+    req.session.destroy((err) => { // セッションの破棄。
         if (err) {
-            // セッション削除中にエラーが発生した場合
-            console.error("セッション破棄エラー:", err); // エラーをコンソールに表示
-            res.status(500).send("ログアウトに失敗しました。"); // クライアントにサーバーエラー（500）を伝えます
+            console.error("セッション破棄エラー:", err);
+            res.status(500).send("ログアウトに失敗しました。");
         } else {
-            res.redirect('/login'); // セッション削除が成功したら、ログインページにリダイレクトします
+            res.redirect('/login'); // ログアウト成功時はログインページへリダイレクト。
         }
     });
 });
 
-// ルートパス ('/') へのGETリクエストを処理する部分です。
-// isAuthenticatedミドルウェアが先に実行され、ログインしているユーザーだけがここに到達できます。
-// プロキシを使ってURLを入力するページを表示します。
+// ルートパス ('/') のGETリクエストハンドラ。
+// isAuthenticatedミドルウェアにより認証済みユーザーのみアクセス可能。
+// プロキシ利用のためのURL入力フォームを含むページを表示します。
 app.get('/', isAuthenticated, (req, res) => {
-    // プロキシ利用ページのHTMLコードをクライアント（ブラウザ）に送信します。
     res.send(`
         <!DOCTYPE html>
         <html>
         <head>
-            <meta charset="UTF-8"> // 文字コードをUTF-8に設定
-            <meta name="viewport" content="width=device-width, initial-scale=1.0"> // 画面サイズ調整
-            <title>プロキシサイト</title> // ページのタイトル
-            <style> // ページの見た目を整えるCSSスタイル
-                body { font-family: sans-serif; margin: 40px; background-color: #f4f4f4; color: #333; } // ページ全体のスタイル
-                .container { max-width: 800px; margin: 0 auto; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); } // コンテンツを囲む領域のスタイル（中央寄せ、最大幅800px）
-                h1 { color: #0056b3; } // タイトルのスタイル
-                form { display: flex; gap: 10px; margin-bottom: 20px; } // フォーム全体のスタイル（要素を横に並べ、間隔を空ける）
-                input[type="text"] { flex-grow: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; } // テキスト入力欄のスタイル（幅を広げる設定）
-                button { padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; transition: background-color 0.3s ease; } // ボタンのスタイル
-                button:hover { background-color: #0056b3; } // ボタンにマウスカーソルが乗ったときのスタイル
-                p { color: #666; font-size: 0.9rem; } // 注意書きなどの段落のスタイル
-                .error { color: red; margin-top: 10px; } // エラーメッセージのスタイル
-                 .logout-link { display: block; text-align: right; margin-bottom: 20px; } // ログアウトリンクのスタイル（右寄せ）
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>プロキシサイト</title>
+            <style>
+                body { font-family: sans-serif; margin: 40px; background-color: #f4f4f4; color: #333; }
+                .container { max-width: 800px; margin: 0 auto; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+                h1 { color: #0056b3; }
+                form { display: flex; gap: 10px; margin-bottom: 20px; }
+                input[type="text"] { flex-grow: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; }
+                button { padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; transition: background-color 0.3s ease; }
+                button:hover { background-color: #0056b3; }
+                p { color: #666; font-size: 0.9rem; }
+                .error { color: red; margin-top: 10px; }
+                 .logout-link { display: block; text-align: right; margin-bottom: 20px; }
             </style>
         </head>
         <body>
             <div class="container">
-                 <a href="/logout" class="logout-link">ログアウト</a> // ログアウトするためのリンク
-                 <h1>プロキシ経由でコンテンツにアクセス</h1> // ページのタイトル
-                <form action="/proxy" method="post"> // URL入力フォーム。入力されたURLは/proxyというアドレスにPOSTメソッドで送信されます。
-                    <input type="text" name="url" placeholder="URLを入力 (例: https://www.google.com)" required> // URL入力欄。name="url"で入力された値がサーバーに送られます。入力必須です。
-                    <button type="submit">アクセス</button> // 送信ボタン
+                 <a href="/logout" class="logout-link">ログアウト</a>
+                 <h1>プロキシ経由でコンテンツにアクセス</h1>
+                <form action="/proxy" method="post"> // フォーム送信先はプロキシエンドポイント '/proxy'。
+                    <input type="text" name="url" placeholder="URLを入力 (例: https://www.google.com)" required>
+                    <button type="submit">アクセス</button>
                 </form>
-                <p>注意: 動画のストリーミングには少し時間がかかる場合があります。</p> // 注意書き
-                 ${req.query.error ? `<p class="error">${req.query.error}</p>` : ''} // URLにエラー情報が含まれていたら表示
+                <p>注意: 動画のストリーミングには少し時間がかかる場合があります。</p>
+                 ${req.query.error ? `<p class="error">${req.query.error}</p>` : ''}
             </div>
         </body>
         </html>
@@ -582,162 +555,143 @@ app.get('/', isAuthenticated, (req, res) => {
 });
 
 
-// '/proxy' というアドレスへのPOSTリクエストを処理する部分です。
-// isAuthenticatedミドルウェアが先に実行され、ログインしているユーザーだけがここに到達できます。
-// ここで、フォームから送信されたURLにアクセスし、コンテンツを取得してクライアントに返します。
+// プロキシ処理のPOSTリクエストハンドラ。
+// フォーム送信（特に書き換えられたフォーム）によるリクエストを処理します。
 app.post('/proxy', isAuthenticated, async (req, res) => {
-    let targetUrl = req.body.url; // リクエストボディ（フォームから送られてきたデータ）の中から、name="url"の値（アクセスしたいURL）を取り出します
-    let targetMethod = 'GET'; // 外部サイトへアクセスする際のHTTPメソッドをデフォルトでGETに設定
-    let requestBody = req.body; // リクエストボディ全体を取得
-    let isFormSubmission = false; // このリクエストが、書き換えられたフォームからの送信かどうかを判定するフラグ
+    let targetUrl = req.body.url; // 入力フォームからのURL取得（初期値）
+    let targetMethod = 'GET'; // 外部サイトへのリクエストメソッド（デフォルト）
+    let requestBody = req.body; // リクエストボディ全体
+    let isFormSubmission = false; // 書き換えられたフォームからの送信フラグ
 
-    // もしリクエストボディに「__proxy_target_url」という隠しフィールドが含まれていたら、これは書き換えられたフォームからの送信です
+    // 書き換えられたフォームからの送信かを判定。隠しフィールド '__proxy_target_url' の存在で判断。
     if (requestBody && requestBody.__proxy_target_url) {
-        isFormSubmission = true; // フラグをtrueに設定
+        isFormSubmission = true;
         try {
-            // 隠しフィールドにBase64でエンコードされて保存されていた元のURLとメソッドをデコードします
+            // Base64エンコードされた元のターゲットURLとメソッドをデコード。
             targetUrl = Buffer.from(requestBody.__proxy_target_url, 'base64').toString('utf-8');
-            targetMethod = requestBody.__proxy_target_method || 'GET'; // 元のメソッドを取得（なければGET）
-            console.log(`Received proxied form submission to: ${targetUrl} with method ${targetMethod}`); // ログに表示
+            targetMethod = requestBody.__proxy_target_method || 'GET';
+            console.log(`Received proxied form submission to: ${targetUrl} with method ${targetMethod}`);
 
-            // プロキシ用の隠しフィールドは不要なので削除します
+            // プロキシ処理用の隠しフィールドは不要になったため削除。
             delete requestBody.__proxy_target_url;
             delete requestBody.__proxy_target_method;
 
         } catch (e) {
-            // デコードに失敗した場合
-            console.error("Failed to decode proxy target URL or method from form data:", e); // エラーを表示
-            return res.status(400).send('Invalid proxy target information.'); // クライアントにエラー応答を返して処理を終了
+            console.error("Failed to decode proxy target URL or method from form data:", e);
+            return res.status(400).send('Invalid proxy target information.'); // 不正なデータの場合はエラー応答。
         }
     } else if (!targetUrl) {
-        // フォーム送信ではなく、かつURLが指定されていない場合
-        console.error("URLが指定されていません (POST)"); // エラーをログに表示
-        return res.redirect('/?error=' + encodeURIComponent('URLを指定してください。')); // エラーメッセージ付きでトップページにリダイレクト
+        // フォーム送信ではなく、かつURLが指定されていない場合はエラー。
+        console.error("URLが指定されていません (POST)");
+        return res.redirect('/?error=' + encodeURIComponent('URLを指定してください。'));
     } else {
-         // フォーム送信ではないがURLが指定されている場合（例: トップページの入力フォームから送信された場合）
+         // トップページの入力フォームからの送信など、隠しフィールドがない場合。
          try {
-              // 受け取ったURLがBase64エンコードされている可能性があるのでデコードを試みます
+              // 受け取ったURLがBase64エンコードされている可能性を考慮しデコードを試みる。
               const decodedUrl = Buffer.from(targetUrl, 'base64').toString('utf-8');
-              // デコードした結果が有効なURL（http://またはhttps://で始まる）であれば、それを採用します
               if (decodedUrl && (decodedUrl.startsWith('http://') || decodedUrl.startsWith('https://'))) {
-                  targetUrl = decodedUrl;
-                  console.log(`Received Base64 encoded URL (initial), decoded to: ${targetUrl}`); // デコード後のURLを表示
+                  targetUrl = decodedUrl; // 有効な絶対URLであれば採用。
+                  console.log(`Received Base64 encoded URL (initial), decoded to: ${targetUrl}`);
               } else {
-                  console.log(`Received non-Base64 or invalid URL (initial): ${targetUrl}`); // Base64でないか無効なURLだった場合
+                  console.log(`Received non-Base64 or invalid URL (initial): ${targetUrl}`);
               }
           } catch (e) {
-              // Base64デコードに失敗した場合
-              console.error(`Base64 decoding failed (initial), using original URL: ${targetUrl}`, e); // エラーを表示し、元のURLを使います
+              console.error(`Base64 decoding failed (initial), using original URL: ${targetUrl}`, e);
           }
 
-          // 受け取ったURLが「http://」または「https://」で始まらない場合（相対パスなどの場合）
+          // URLが絶対URLでない場合、プロキシのベースURLを基準に解決を試みる。
           if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
                try {
-                   // このプロキシサーバーのベースURL（例: http://localhost:3000/）を取得します
-                   const proxyBaseUrl = `${req.protocol}://${req.get('host')}/`;
-                   // 受け取ったURLを、プロキシのベースURLに対して絶対URLに変換します
-                   const resolvedInitialUrl = urlModule.resolve(proxyBaseUrl, targetUrl);
+                   const proxyBaseUrl = `${req.protocol}://${req.get('host')}/`; // プロキシサーバーのベースURLを取得。
+                   const resolvedInitialUrl = urlModule.resolve(proxyBaseUrl, targetUrl); // 相対URLを解決。
 
-                   // 解決したURLが有効な絶対URLであれば採用します
                    if (resolvedInitialUrl.startsWith('http://') || resolvedInitialUrl.startsWith('https://')) {
-                       targetUrl = resolvedInitialUrl;
-                       console.log(`Resolved initial input relative URL: ${targetUrl}`); // 解決後のURLを表示
+                       targetUrl = resolvedInitialUrl; // 解決後の有効な絶対URLを採用。
+                       console.log(`Resolved initial input relative URL: ${targetUrl}`);
                    } else {
-                       // 解決したURLが無効な場合
-                       console.error(`Invalid initial input URL after resolution: ${resolvedInitialUrl}`); // エラーを表示
-                       return res.redirect('/?error=' + encodeURIComponent('無効なURL形式です。フルURLを入力してください。')); // エラーメッセージ付きでリダイレクト
+                       console.error(`Invalid initial input URL after resolution: ${resolvedInitialUrl}`);
+                       return res.redirect('/?error=' + encodeURIComponent('無効なURL形式です。フルURLを入力してください。')); // 解決後も無効ならエラー。
                    }
                } catch (e) {
-                   // URL解決中にエラーが発生した場合
-                   console.error(`Error resolving initial input URL: ${targetUrl}`, e); // エラーを表示
-                   return res.redirect('/?error=' + encodeURIComponent('URLの解決中にエラーが発生しました。')); // エラーメッセージ付きでリダイレクト
+                   console.error(`Error resolving initial input URL: ${targetUrl}`, e);
+                   return res.redirect('/?error=' + encodeURIComponent('URLの解決中にエラーが発生しました。'));
                }
           }
 
-          targetMethod = 'GET'; // 外部サイトへアクセスするメソッドをGETに設定
-          requestBody = null; // リクエストボディはなし
+          targetMethod = 'GET'; // このケースでは外部サイトへのリクエストはGETとする。
+          requestBody = null; // リクエストボディはなし。
     }
 
-    // クライアント（ブラウザ）から送られてきたヘッダー情報を取得します
-    const userAgent = req.headers['user-agent']; // ユーザーエージェント（どのブラウザかなど）
-    const referer = req.headers['referer']; // どのページから来たか
+    // クライアントからのリクエストヘッダーを取得。外部サイトへのリクエストヘッダー構築に使用。
+    const userAgent = req.headers['user-agent'];
+    const referer = req.headers['referer'];
 
-    // 外部サイトへリクエストを送る際に使用するヘッダーを作成します
+    // 外部サイトへのリクエストヘッダーを構築。クライアントからのヘッダーをコピーしつつ、一部を調整。
     const requestHeaders = {
-        'Accept': req.headers['accept'] || 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7', // 受け入れ可能なコンテンツタイプ
-        'Accept-Language': req.headers['accept-language'] || 'ja,en-US;q=0.9,en;q=0.8', // 受け入れ可能な言語
-        'User-Agent': userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36', // ユーザーエージェント（もしクライアントから送られてこなければデフォルト値を設定）
-        'Connection': 'keep-alive', // 接続を維持する設定
-        'Upgrade-Insecure-Requests': '1', // HTTPSにアップグレードしたい意思表示
-        ...(referer && { 'Referer': referer }), // Refererヘッダーがあれば追加
-         // クライアントから送られてきたヘッダーのうち、一部を除く他のヘッダーもコピーします
+        'Accept': req.headers['accept'] || 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language': req.headers['accept-language'] || 'ja,en-US;q=0.9,en;q=0.8',
+        'User-Agent': userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36', // User-Agentを設定（クライアントからなければデフォルト）
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        ...(referer && { 'Referer': referer }), // Refererヘッダーは存在する場合のみ追加。
+         // クライアントからのヘッダーをほぼ全てコピーするが、プロキシとして自分で設定するヘッダー（host, cookieなど）は除く。
          ...Object.keys(req.headers).reduce((acc, headerName) => {
-             // 除外するヘッダーのリスト（プロキシとして自分で設定するため、元のものは使わない）
              if (!['host', 'cookie', 'content-type', 'content-length', 'connection', 'user-agent', 'referer', 'accept', 'accept-language', 'upgrade-insecure-requests'].includes(headerName.toLowerCase())) {
-                  acc[headerName] = req.headers[headerName]; // 除外リストにないヘッダーはコピー
+                  acc[headerName] = req.headers[headerName];
              }
-             return acc; // 累積オブジェクトを返す
-         }, {}) // 初期値は空のオブジェクト
+             return acc;
+         }, {})
     };
 
-    // もしPOSTリクエストで、かつリクエストボディがある場合
+    // POSTリクエストの場合、Content-Typeヘッダーとリクエストボディを設定。
     if (targetMethod === 'POST' && requestBody) {
-        requestHeaders['Content-Type'] = 'application/x-www-form-urlencoded'; // コンテンツタイプをフォームデータ形式に設定
+        requestHeaders['Content-Type'] = 'application/x-www-form-urlencoded';
         if (typeof requestBody !== 'string') {
-             requestBody = qs.stringify(requestBody); // リクエストボディが文字列でなければ、qsを使ってURLエンコードされた文字列に変換
+             requestBody = qs.stringify(requestBody); // オブジェクト形式のリクエストボディをURLエンコードされた文字列に変換。
         }
     }
 
     try {
-        // アクセスしようとしているURLがYouTube動画のURLかどうかを判定する正規表現
+        // YouTube動画URLかどうかの判定正規表現。
         const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+$/;
 
-        // もしGETリクエストで、フォームからの送信ではなく、かつYouTubeのURLであれば
+        // GETリクエストで、フォーム送信ではなく、かつYouTube URLの場合、動画ダウンロード処理へ。
         if (targetMethod === 'GET' && !isFormSubmission && youtubeRegex.test(targetUrl)) {
-             console.log(`YouTube動画のURLが指定されました: ${targetUrl}`); // ログに表示
-             // downloadVideo関数を使って動画をダウンロードします
-             const videoPath = await downloadVideo(targetUrl);
-             // ダウンロードした動画ファイルのファイル名を取得します
-             const videoFileName = path.basename(videoPath);
-             // このプロキシサーバー上の動画ファイルへの直接URLを作成します
+             console.log(`YouTube動画のURLが指定されました: ${targetUrl}`);
+             const videoPath = await downloadVideo(targetUrl); // 動画ダウンロード実行。
+             const videoFileName = path.basename(videoPath); // ダウンロードしたファイル名を取得。
+             // プロキシサーバー上の動画ファイルへの直接アクセスURLを生成。
              const videoUrl = `${req.protocol}://${req.get('host')}/video/${videoFileName}`;
-             console.log(`動画ファイルへの直接URL: ${videoUrl}`); // ログに表示
-             // クライアントをこの動画ファイルへのURLにリダイレクトさせます。
-             // これにより、ブラウザが直接動画ファイルを読み込み、ストリーミング再生が始まります。
-             res.redirect(videoUrl);
+             console.log(`動画ファイルへの直接URL: ${videoUrl}`);
+             res.redirect(videoUrl); // 生成したURLへリダイレクト。これによりブラウザが動画ファイルに直接アクセスしストリーミング再生を開始します。
 
         } else {
-            // YouTube動画ではない、またはPOSTリクエストの場合
-            console.log(`ターゲットURLにアクセスします (${targetMethod}): ${targetUrl}`); // ログに表示
-            // fetchWebPage関数を使って、指定されたURLのコンテンツを取得します
+            // YouTube動画でない、またはPOSTリクエストの場合、通常のウェブページ取得処理へ。
+            console.log(`ターゲットURLにアクセスします (${targetMethod}): ${targetUrl}`);
+            // fetchWebPage関数で外部サイトのコンテンツを取得。
             const { data: pageContentBuffer, headers, finalUrl } = await fetchWebPage(targetUrl, targetMethod, requestHeaders, requestBody);
-            const contentType = headers['content-type']; // 取得したコンテンツのContent-Typeヘッダーを取得
+            const contentType = headers['content-type']; // 応答のContent-Typeを取得。
 
-            // 取得したコンテンツがHTMLの場合
+            // 取得したコンテンツタイプに応じた処理。
             if (contentType && contentType.includes('text/html')) {
-                 // decodeContent関数を使って、取得したBufferデータを文字列（HTMLコード）に変換します
+                 // HTMLの場合: デコード、URL書き換え、セッションへの最終URL保存。
                  const pageContent = decodeContent(pageContentBuffer, headers);
-                 // rewriteUrls関数を使って、HTMLコード内のURLをプロキシ経由に書き換えます
                  const rewrittenHtml = rewriteUrls(pageContent, finalUrl);
-                 // リダイレクト後の最終的なURLをセッションに保存しておきます（後で相対パスの解決に使うため）
-                 req.session.lastProxiedUrl = finalUrl;
-                 console.log(`Saved last proxied URL to session: ${finalUrl}`); // 保存したURLをログに表示
-                 res.setHeader('Content-Type', 'text/html; charset=utf-8'); // 応答ヘッダーのContent-TypeをHTML（UTF-8）に設定
-                 res.send(rewrittenHtml); // 書き換えたHTMLコードをクライアントに送信します
+                 req.session.lastProxiedUrl = finalUrl; // 相対URL解決のために最終URLをセッションに保存。
+                 console.log(`Saved last proxied URL to session: ${finalUrl}`);
+                 res.setHeader('Content-Type', 'text/html; charset=utf-8'); // 応答ヘッダー設定。
+                 res.send(rewrittenHtml); // 書き換えたHTMLを送信。
             } else if (contentType && contentType.includes('text/css')) {
-                 // 取得したコンテンツがCSSの場合
-                 // decodeContent関数を使って、取得したBufferデータを文字列（CSSコード）に変換します
+                 // CSSの場合: デコード、URL書き換え。
                  const pageContent = decodeContent(pageContentBuffer, headers);
-                 // rewriteCssUrls関数を使って、CSSコード内のURLをプロキシ経由に書き換えます
                  const rewrittenCss = rewriteCssUrls(pageContent, finalUrl);
-                 res.setHeader('Content-Type', 'text/css; charset=utf-8'); // 応答ヘッダーのContent-TypeをCSS（UTF-8）に設定
-                 res.send(rewrittenCss); // 書き換えたCSSコードをクライアントに送信します
+                 res.setHeader('Content-Type', 'text/css; charset=utf-8'); // 応答ヘッダー設定。
+                 res.send(rewrittenCss); // 書き換えたCSSを送信。
             } else {
-                // HTMLでもCSSでもない場合（画像、動画、その他のファイルなど）
-                // 取得した元のヘッダー情報をクライアントにそのまま返します（Content-EncodingとContent-Lengthは除く）
+                // その他のコンテンツタイプ（画像、動画など）の場合: ヘッダーを調整してBufferをそのまま送信。
                 for (const header in headers) {
                      if (header.toLowerCase() === 'content-type') {
-                         // Content-Typeヘッダーは、文字コード情報があれば削除し、テキストの場合はUTF-8を追加します
+                         // Content-Typeからcharset情報を削除し、テキストの場合はutf-8を追加。
                          const cleanContentType = contentType.replace(/;\s*charset=[^;]+/i, '');
                          if (cleanContentType.startsWith('text/')) {
                               res.setHeader('Content-Type', cleanContentType + '; charset=utf-8');
@@ -745,127 +699,113 @@ app.post('/proxy', isAuthenticated, async (req, res) => {
                               res.setHeader('Content-Type', cleanContentType);
                          }
                      } else if (header.toLowerCase() !== 'content-encoding' && header.toLowerCase() !== 'content-length') {
-                         res.setHeader(header, headers[header]); // Content-EncodingとContent-Length以外のヘッダーをそのままコピー
+                         // Content-EncodingとContent-Lengthはプロキシが制御するためコピーしない。
+                         res.setHeader(header, headers[header]); // その他のヘッダーはコピー。
                      }
                 }
-                res.send(pageContentBuffer); // 取得したコンテンツのBufferデータをそのままクライアントに送信します
+                res.send(pageContentBuffer); // 取得したBufferデータをそのままクライアントに送信。
             }
         }
     } catch (error) {
-        // コンテンツ取得や処理中にエラーが発生した場合
-        console.error(`処理中にエラーが発生しました (POST): ${error.message}`); // エラーをログに表示
-        // エラーメッセージ付きでトップページにリダイレクトします
-        res.redirect('/?error=' + encodeURIComponent(`処理に失敗しました: ${error.message}`));
+        console.error(`処理中にエラーが発生しました (POST): ${error.message}`);
+        res.redirect('/?error=' + encodeURIComponent(`処理に失敗しました: ${error.message}`)); // エラー時はトップページへリダイレクトしエラー表示。
     }
 });
 
-// '/proxy' というアドレスへのGETリクエストを処理する部分です。
-// isAuthenticatedミドルウェアが先に実行され、ログインしているユーザーだけがここに到達できます。
-// これは主に、rewriteUrls関数で書き換えられたHTML内のリンク（/proxy?url=...）や、CSS内のurl()（/proxy?url=...）からのリクエストを処理します。
+// プロキシ処理のGETリクエストハンドラ。
+// 主にrewriteUrls関数によって書き換えられたURL（例: /proxy?url=...）からのリクエストを処理します。
 app.get('/proxy', isAuthenticated, async (req, res) => {
-    let targetUrl = req.query.url; // URLのクエリパラメータ（?url=...）から、アクセスしたいURL（Base64エンコードされている）を取得します
-    const refererUrl = req.headers['referer']; // どのページからこのリクエストが来たかを示すRefererヘッダーを取得
+    let targetUrl = req.query.url; // クエリパラメータからBase64エンコードされたターゲットURLを取得。
+    const refererUrl = req.headers['referer']; // Refererヘッダーを取得。
 
-    // もしターゲットURLが指定されていない場合
+    // ターゲットURLがクエリパラメータで指定されていない場合。
+    // これは、HTML内の相対パス（例: <img src="/images/logo.png">）がプロキシ経由でリクエストされたケースが考えられます。
     if (!targetUrl) {
-        const requestedPath = req.path; // リクエストされたパス（例: /proxy/images/logo.png）を取得
-        const lastProxiedUrl = req.session.lastProxiedUrl; // セッションに保存しておいた、最後にアクセスしたページのURLを取得
+        const requestedPath = req.path; // リクエストされたパス（例: /proxy/images/logo.png）を取得。
+        const lastProxiedUrl = req.session.lastProxiedUrl; // セッションに保存しておいた、最後にプロキシしたページのURLを取得。
 
-        // もし最後にアクセスしたページのURLがセッションにあって、かつリクエストされたパスがルートパス('/')でなければ
-        // （これは、HTML内の相対パス（例: /images/logo.png）がプロキシ経由でリクエストされた可能性が高いです）
+        // 最後にプロキシしたページのURLがセッションにあり、かつリクエストパスがルートでない場合。
         if (lastProxiedUrl && requestedPath !== '/') {
-            console.warn(`Caught potential direct relative path access: ${requestedPath}. Attempting to resolve against last proxied URL: ${lastProxiedUrl}`); // 警告をログに表示
+            console.warn(`Caught potential direct relative path access: ${requestedPath}. Attempting to resolve against last proxied URL: ${lastProxiedUrl}`);
             try {
-                // リクエストされた相対パスを、最後にアクセスしたページのURLに対して絶対URLに変換します
+                // リクエストされた相対パスを、最後にプロキシしたページのURLを基準に絶対URLに解決。
                 const resolvedUrl = urlModule.resolve(lastProxiedUrl, requestedPath);
-                // 解決した絶対URLを使って、正しいプロキシ経由のURL（/proxy?url=Base64...）を作成します
+                // 解決した絶対URLを使って、正しいプロキシ経由のURL（/proxy?url=Base64...）を作成。
                 const correctProxiedUrl = `/proxy?url=${Buffer.from(resolvedUrl).toString('base64')}`;
-                console.log(`Redirecting to correct proxied URL: ${correctProxiedUrl}`); // リダイレクト先のURLをログに表示
-                return res.redirect(correctProxiedUrl); // 正しいプロキシ経由のURLにリダイレクトさせます
+                console.log(`Redirecting to correct proxied URL: ${correctProxiedUrl}`);
+                return res.redirect(correctProxiedUrl); // 正しいプロキシURLへリダイレクト。
             } catch (e) {
-                // URL解決中にエラーが発生した場合
-                console.error(`Error resolving relative path ${requestedPath} against ${lastProxiedUrl}:`, e); // エラーを表示
-                return res.status(500).send(`Error resolving relative path.`); // クライアントにエラー応答を返して処理を終了
+                console.error(`Error resolving relative path ${requestedPath} against ${lastProxiedUrl}:`, e);
+                return res.status(500).send(`Error resolving relative path.`); // 解決エラー時はサーバーエラー応答。
             }
         } else {
-            // ターゲットURLが指定されておらず、セッションにも最後にアクセスしたURLがない場合
-            console.error("URLが指定されていません (GET) and no last proxied URL in session."); // エラーをログに表示
-            return res.status(400).send('URLを指定してください。またはセッション情報がありません。'); // クライアントにエラー応答を返して処理を終了
+            console.error("URLが指定されていません (GET) and no last proxied URL in session.");
+            return res.status(400).send('URLを指定してください。またはセッション情報がありません。'); // URL指定なし、かつセッション情報もない場合はエラー応答。
         }
     }
 
     try {
-         // クエリパラメータから取得したターゲットURL（Base64エンコードされているはず）をデコードします
+         // クエリパラメータから取得したターゲットURL（Base64エンコードされているはず）をデコード。
          const decodedUrl = Buffer.from(targetUrl, 'base64').toString('utf-8');
-         // デコードした結果が有効なURL（http://またはhttps://で始まる）であれば、それを採用します
          if (decodedUrl && (decodedUrl.startsWith('http://') || decodedUrl.startsWith('https://'))) {
-             targetUrl = decodedUrl;
-             console.log(`Received Base64 encoded URL, decoded to: ${targetUrl}`); // デコード後のURLを表示
+             targetUrl = decodedUrl; // 有効な絶対URLであれば採用。
+             console.log(`Received Base64 encoded URL, decoded to: ${targetUrl}`);
          } else {
-             // Base64でないか無効なURLだった場合
-             console.log(`Received non-Base64 or invalid URL: ${targetUrl}`); // ログに表示
+             console.log(`Received non-Base64 or invalid URL: ${targetUrl}`);
          }
      } catch (e) {
-         // Base64デコードに失敗した場合
-         console.error(`Base64 decoding failed, using original URL: ${targetUrl}`, e); // エラーを表示し、元のURLを使います
+         console.error(`Base64 decoding failed, using original URL: ${targetUrl}`, e);
      }
 
-    // クライアント（ブラウザ）から送られてきたヘッダー情報を取得します
-    const userAgent = req.headers['user-agent']; // ユーザーエージェント
+    // クライアントからのリクエストヘッダーを取得。
+    const userAgent = req.headers['user-agent'];
 
-    // 外部サイトへリクエストを送る際に使用するヘッダーを作成します
+    // 外部サイトへのリクエストヘッダーを構築。GETリクエストの場合、Acceptヘッダーのデフォルト値が異なります。
     const requestHeaders = {
-        'Accept': req.headers['accept'] || '*/*', // 受け入れ可能なコンテンツタイプ（デフォルトは全て）
-        'Accept-Language': req.headers['accept-language'] || 'ja,en-US;q=0.9,en;q=0.8', // 受け入れ可能な言語
-        'User-Agent': userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36', // ユーザーエージェント
-        'Connection': 'keep-alive', // 接続を維持する設定
-        ...(refererUrl && { 'Referer': refererUrl }), // Refererヘッダーがあれば追加
-         // Sec-Fetch関連のヘッダーがあれば追加（ブラウザが自動で送るセキュリティ関連のヘッダー）
+        'Accept': req.headers['accept'] || '*/*', // GETリクエストではAccept: */* をデフォルトとする。
+        'Accept-Language': req.headers['accept-language'] || 'ja,en-US;q=0.9,en;q=0.8',
+        'User-Agent': userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Connection': 'keep-alive',
+        ...(refererUrl && { 'Referer': refererUrl }), // Refererヘッダーがあれば追加。
+         // Sec-Fetch関連ヘッダーもコピー。
          ...(req.headers['sec-fetch-site'] && { 'Sec-Fetch-Site': req.headers['sec-fetch-site'] }),
          ...(req.headers['sec-fetch-mode'] && { 'Sec-Fetch-Mode': req.headers['sec-fetch-mode'] }),
          ...(req.headers['sec-fetch-dest'] && { 'Sec-Fetch-Dest': req.headers['sec-fetch-dest'] }),
          ...(req.headers['sec-fetch-user'] && { 'Sec-Fetch-User': req.headers['sec-fetch-user'] }),
-         // クライアントから送られてきたヘッダーのうち、一部を除く他のヘッダーもコピーします
+         // その他のヘッダーをコピー（一部除く）。
          ...Object.keys(req.headers).reduce((acc, headerName) => {
-             // 除外するヘッダーのリスト
              if (!['host', 'cookie', 'content-type', 'content-length', 'connection', 'user-agent', 'referer', 'accept', 'accept-language', 'upgrade-insecure-requests', 'sec-fetch-site', 'sec-fetch-mode', 'sec-fetch-dest', 'sec-fetch-user'].includes(headerName.toLowerCase())) {
-                  acc[headerName] = req.headers[headerName]; // 除外リストにないヘッダーはコピー
+                  acc[headerName] = req.headers[headerName];
              }
-             return acc; // 累積オブジェクトを返す
-         }, {}) // 初期値は空のオブジェクト
+             return acc;
+         }, {})
     };
 
     try {
-        console.log(`一般的なURLにアクセスします (GET): ${targetUrl}`); // ログに表示
-        // fetchWebPage関数を使って、指定されたURLのコンテンツを取得します（メソッドはGET固定）
+        console.log(`一般的なURLにアクセスします (GET): ${targetUrl}`);
+        // fetchWebPage関数で外部サイトのコンテンツを取得（メソッドはGET固定）。
         const { data: pageContentBuffer, headers, finalUrl } = await fetchWebPage(targetUrl, 'GET', requestHeaders);
-        const contentType = headers['content-type']; // 取得したコンテンツのContent-Typeヘッダーを取得
+        const contentType = headers['content-type']; // 応答のContent-Typeを取得。
 
-        // 取得したコンテンツがHTMLの場合
+        // 取得したコンテンツタイプに応じた処理。
         if (contentType && contentType.includes('text/html')) {
-            // decodeContent関数を使って、Bufferデータを文字列（HTMLコード）に変換
+            // HTMLの場合: デコード、URL書き換え、セッションへの最終URL保存。
             const pageContent = decodeContent(pageContentBuffer, headers);
-            // rewriteUrls関数を使って、HTMLコード内のURLをプロキシ経由に書き換え
             const rewrittenHtml = rewriteUrls(pageContent, finalUrl);
-            // リダイレクト後の最終的なURLをセッションに保存
-            req.session.lastProxiedUrl = finalUrl;
-            console.log(`Saved last proxied URL to session: ${finalUrl}`); // 保存したURLをログに表示
-            res.setHeader('Content-Type', 'text/html; charset=utf-8'); // 応答ヘッダーをHTML（UTF-8）に設定
-            res.send(rewrittenHtml); // 書き換えたHTMLコードをクライアントに送信
+            req.session.lastProxiedUrl = finalUrl; // 相対URL解決のために最終URLをセッションに保存。
+            console.log(`Saved last proxied URL to session: ${finalUrl}`);
+            res.setHeader('Content-Type', 'text/html; charset=utf-8'); // 応答ヘッダー設定。
+            res.send(rewrittenHtml); // 書き換えたHTMLを送信。
         } else if (contentType && contentType.includes('text/css')) {
-            // 取得したコンテンツがCSSの場合
-            // decodeContent関数を使って、Bufferデータを文字列（CSSコード）に変換
+            // CSSの場合: デコード、URL書き換え。
             const pageContent = decodeContent(pageContentBuffer, headers);
-            // rewriteCssUrls関数を使って、CSSコード内のURLをプロキシ経由に書き換え
             const rewrittenCss = rewriteCssUrls(pageContent, finalUrl);
-            res.setHeader('Content-Type', 'text/css; charset=utf-8'); // 応答ヘッダーをCSS（UTF-8）に設定
-            res.send(rewrittenCss); // 書き換えたCSSコードをクライアントに送信
+            res.setHeader('Content-Type', 'text/css; charset=utf-8'); // 応答ヘッダー設定。
+            res.send(rewrittenCss); // 書き換えたCSSを送信。
         } else {
-            // HTMLでもCSSでもない場合（画像、動画、その他のファイルなど）
-            // 取得した元のヘッダー情報をクライアントにそのまま返します（Content-EncodingとContent-Lengthは除く）
+            // その他のコンテンツタイプの場合: ヘッダーを調整してBufferをそのまま送信。
             for (const header in headers) {
                  if (header.toLowerCase() === 'content-type') {
-                     // Content-Typeヘッダーは、文字コード情報があれば削除し、テキストの場合はUTF-8を追加します
                      const cleanContentType = contentType.replace(/;\s*charset=[^;]+/i, '');
                      if (cleanContentType.startsWith('text/')) {
                           res.setHeader('Content-Type', cleanContentType + '; charset=utf-8');
@@ -873,128 +813,126 @@ app.get('/proxy', isAuthenticated, async (req, res) => {
                           res.setHeader('Content-Type', cleanContentType);
                      }
                  } else if (header.toLowerCase() !== 'content-encoding' && header.toLowerCase() !== 'content-length') {
-                     res.setHeader(header, headers[header]); // Content-EncodingとContent-Length以外のヘッダーをそのままコピー
+                     res.setHeader(header, headers[header]);
                  }
             }
-            res.send(pageContentBuffer); // 取得したコンテンツのBufferデータをそのままクライアントに送信
+            res.send(pageContentBuffer); // 取得したBufferデータをそのままクライアントに送信。
         }
 
     } catch (error) {
-        // コンテンツ取得や処理中にエラーが発生した場合
-        console.error(`処理中にエラーが発生しました (GET): ${error.message}`); // エラーをログに表示
-        res.status(500).send(`処理に失敗しました: ${error.message}`); // クライアントにサーバーエラー（500）を伝えます
+        console.error(`処理中にエラーが発生しました (GET): ${error.message}`);
+        res.status(500).send(`処理に失敗しました: ${error.message}`); // エラー時はサーバーエラー応答。
     }
 });
 
 
-// '/video/:fileName' というアドレスへのGETリクエストを処理する部分です。
-// isAuthenticatedミドルウェアが先に実行され、ログインしているユーザーだけがここに到達できます。
-// ここで、ダウンロードフォルダに保存されている動画ファイルをクライアントにストリーミング配信します。
-// ':fileName' の部分は、実際のリクエストに応じてファイル名（例: /video/abcdef1234567890.webm）が入ります。
+// '/video/:fileName' というアドレスへのGETリクエストハンドラ。
+// isAuthenticatedミドルウェアにより認証済みユーザーのみアクセス可能。
+// ダウンロードフォルダ内の動画ファイルをストリーミング配信します。Rangeヘッダーに対応し、シーク再生を可能にします。
 app.get('/video/:fileName', isAuthenticated, (req, res) => {
-    const fileName = req.params.fileName; // URLの ':fileName' の部分からファイル名を取得します
-    const filePath = path.join(downloadsDir, fileName); // ダウンロードフォルダ内のそのファイルの絶対パスを作成します
+    const fileName = req.params.fileName; // URLパラメータからファイル名を取得。
+    const filePath = path.join(downloadsDir, fileName); // ファイルの絶対パスを生成。
 
-    // 指定されたファイルの情報（サイズなど）を取得します
+    // ファイルの情報を取得（存在確認、サイズなど）。
     fs.stat(filePath, (err, stat) => {
         if (err) {
-            // ファイルが見つからないか、アクセスできない場合
-            console.error(`動画ファイルが見つからないか、アクセスできません: ${filePath}`, err); // エラーをログに表示
-            return res.status(404).send("動画ファイルが見つかりません"); // クライアントにファイルが見つからない（404）エラーを伝えます
+            console.error(`動画ファイルが見つからないか、アクセスできません: ${filePath}`, err);
+            return res.status(404).send("動画ファイルが見つかりません"); // ファイルが見つからない場合は404エラー。
         }
 
-        const fileSize = stat.size; // ファイルサイズを取得
-        const range = req.headers.range; // クライアントからのリクエストに「Range」ヘッダーが含まれているか確認します（動画の途中から再生したい場合などに使われます）
+        const fileSize = stat.size; // ファイルサイズ。
+        const range = req.headers.range; // Rangeヘッダーを取得（シーク再生リクエストの場合に存在する）。
 
         if (range) {
-            // Rangeヘッダーが含まれている場合（動画の途中から再生するリクエスト）
-            const parts = range.replace(/bytes=/, "").split("-"); // "bytes=start-end" の形式からstartとendを抽出
-            const start = parseInt(parts[0], 10); // 開始位置を整数に変換
-            const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1; // 終了位置を整数に変換（指定がなければファイルの最後まで）
-            const chunkSize = (end - start) + 1; // 送信するデータのサイズ（チャンクサイズ）を計算
+            // Rangeリクエストの場合（部分的なコンテンツ要求）。
+            const parts = range.replace(/bytes=/, "").split("-");
+            const start = parseInt(parts[0], 10); // 開始バイト位置。
+            const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1; // 終了バイト位置（指定がなければ最後まで）。
+            const chunkSize = (end - start) + 1; // 送信するデータのサイズ。
 
-            // 指定された範囲のファイルを読み込むためのストリームを作成します
+            // 指定された範囲のファイルを読み込むためのリードストリームを作成。
             const fileStream = fs.createReadStream(filePath, { start, end });
 
-            // HTTP応答ヘッダーを設定します。ステータスコードは206（Partial Content: 部分的なコンテンツ）です。
+            // HTTP応答ヘッダーを設定。ステータスコードは206 Partial Content。
             res.writeHead(206, {
-                "Content-Range": `bytes ${start}-${end}/${fileSize}`, // 送信するデータの範囲とファイルサイズ
-                "Accept-Ranges": "bytes", // バイト単位での範囲指定を受け付け可能であることを示す
-                "Content-Length": chunkSize, // 送信するデータのサイズ
-                "Content-Type": "video/webm", // コンテンツの種類はWebM動画
+                "Content-Range": `bytes ${start}-${end}/${fileSize}`, // 応答するデータの範囲とファイルサイズ全体。
+                "Accept-Ranges": "bytes", // バイト単位での範囲要求を受け付け可能であることを示す。
+                "Content-Length": chunkSize, // 応答するデータのサイズ。
+                "Content-Type": "video/webm", // コンテンツタイプ。
             });
 
-            // ファイルストリームから読み込んだデータを、そのままクライアントへの応答ストリームに流し込みます（パイプ処理）
+            // ファイルストリームから読み込んだデータを応答ストリームへパイプ（ストリーミング）。
             fileStream.pipe(res);
 
-            // ストリームの読み込みが完了した場合
+            // ストリーム終了時の処理。
             fileStream.on('end', () => {
-                console.log('Range stream finished'); // ログに表示
-                res.end(); // 応答を終了
+                console.log('Range stream finished');
+                res.end(); // 応答を終了。
             });
 
-            // ストリームの読み込み中にエラーが発生した場合
+            // ストリームエラー時の処理。
             fileStream.on('error', (streamErr) => {
-                console.error(`ファイルストリームエラー: ${streamErr.message}`); // エラーをログに表示
-                res.sendStatus(500); // クライアントにサーバーエラー（500）を伝えます
+                console.error(`ファイルストリームエラー: ${streamErr.message}`);
+                res.sendStatus(500); // サーバーエラー応答。
             });
 
         } else {
-            // Rangeヘッダーが含まれていない場合（動画の最初から再生するリクエスト）
-            // ファイル全体を読み込むためのストリームを作成します
-            const stream = fs.createReadStream(filePath);
-            // HTTP応答ヘッダーを設定します。ステータスコードは200（OK）です。
+            // Rangeリクエストでない場合（ファイル全体要求）。
+            const stream = fs.createReadStream(filePath); // ファイル全体を読み込むリードストリームを作成。
+            // HTTP応答ヘッダーを設定。ステータスコードは200 OK。
             res.writeHead(200, {
-                "Content-Length": fileSize, // ファイルサイズ全体
-                "Content-Type": "video/webm", // コンテンツの種類はWebM動画
-                "Accept-Ranges": "bytes", // バイト単位での範囲指定を受け付け可能であることを示す
+                "Content-Length": fileSize, // ファイルサイズ全体。
+                "Content-Type": "video/webm", // コンテンツタイプ。
+                "Accept-Ranges": "bytes", // バイト単位での範囲要求を受け付け可能であることを示す（今後のRangeリクエストに備える）。
             });
 
-            // ファイルストリームから読み込んだデータを、そのままクライアントへの応答ストリームに流し込みます
+            // ファイルストリームから読み込んだデータを応答ストリームへパイプ（ストリーミング）。
             stream.pipe(res);
 
-            // ストリームの読み込みが完了した場合
+            // ストリーム終了時の処理。
             stream.on('end', () => {
-                console.log('Full stream finished'); // ログに表示
-                res.end(); // 応答を終了
+                console.log('Full stream finished');
+                res.end(); // 応答を終了。
             });
 
-            // ストリームの読み込み中にエラーが発生した場合
+            // ストリームエラー時の処理。
             stream.on('error', (streamErr) => {
-                console.error(`Stream error: ${streamErr.message}`); // エラーをログに表示
-                res.sendStatus(500); // クライアントにサーバーエラー（500）を伝えます
+                console.error(`Stream error: ${streamErr.message}`);
+                res.sendStatus(500); // サーバーエラー応答。
             });
         }
     });
 });
 
 
-// サーバーを起動し、指定したポートでリクエストを受け付けるようにします
+// サーバーの起動。
+// 指定したポートでHTTPリクエストのリッスンを開始します。
 app.listen(port, () => {
-    // サーバーが起動したことをコンソールに表示します
     console.log(`Proxy server running at http://localhost:${port}/`);
-    console.log(`Downloads will be saved in: ${downloadsDir}`); // ダウンロードフォルダの場所を表示
-    console.log(`Access the login page at http://localhost:${port}/login`); // ログインページのアドレスを表示
+    console.log(`Downloads will be saved in: ${downloadsDir}`);
+    console.log(`Access the login page at http://localhost:${port}/login`);
 });
 
-// アプリケーションが終了する際に、ダウンロードしたファイルを削除する処理（オプション）
-// process.on('exit', cleanup); // アプリケーション終了時にcleanup関数を実行
-// process.on('SIGINT', cleanup); // Ctrl+Cなどで強制終了された場合にcleanup関数を実行
+// アプリケーション終了時のクリーンアップ処理（コメントアウトされています）。
+// サーバー停止時にダウンロードフォルダ内のファイルを削除する処理を実装できますが、
+// 現在はコメントアウトされており、有効になっていません。
+// process.on('exit', cleanup); // プロセス終了イベントでcleanupを実行。
+// process.on('SIGINT', cleanup); // SIGINTシグナル（Ctrl+Cなど）受信時にcleanupを実行。
 
 // function cleanup() {
-//     console.log("Cleaning up downloaded files..."); // クリーンアップ開始メッセージ
-//     fs.readdir(downloadsDir, (err, files) => { // ダウンロードフォルダの中のファイル一覧を取得
+//     console.log("Cleaning up downloaded files...");
+//     fs.readdir(downloadsDir, (err, files) => {
 //         if (err) {
-//             console.error("Error reading downloads directory:", err); // ファイル一覧取得エラー
+//             console.error("Error reading downloads directory:", err);
 //             return;
 //         }
-//         for (const file of files) { // ファイルを一つずつ処理
-//             const filePath = path.join(downloadsDir, file); // ファイルの絶対パスを作成
-//             fs.unlink(filePath, (unlinkErr) => { // ファイルを削除
+//         for (const file of files) {
+//             const filePath = path.join(downloadsDir, file);
+//             fs.unlink(filePath, (unlinkErr) => {
 //                 if (unlinkErr) {
-//                     console.error(`Error deleting file ${filePath}:`, unlinkErr); // 削除エラー
+//                     console.error(`Error deleting file ${filePath}:`, unlinkErr);
 //                 } else {
-//                     console.log(`Deleted file: ${filePath}`); // 削除成功
+//                     console.log(`Deleted file: ${filePath}`);
 //                 }
 //             });
 //         }
